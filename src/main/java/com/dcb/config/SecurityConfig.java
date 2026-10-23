@@ -77,7 +77,6 @@ public class SecurityConfig {
                 .build();
     }
 
-
     @Bean
     public JwtDecoder jwtDecoder() {
         NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder
@@ -110,9 +109,6 @@ public class SecurityConfig {
                     new OAuth2Error("invalid_token", "The required audience is missing", null));
         }
     }
-
-
-
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
