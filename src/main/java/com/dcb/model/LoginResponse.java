@@ -12,9 +12,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LoginResponse  {
-    private String username;
+    private String bankId;
     private String accessToken;
     private String refreshToken;
-    private String code;
-    private String message;
 }
