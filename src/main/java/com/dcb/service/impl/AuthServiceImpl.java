@@ -39,7 +39,7 @@ public class AuthServiceImpl implements AuthService {
         log.info("{} processing signup request: {}",request.getMailId(), request);
 
         //check mail id idempotency
-        if(userRepo.existsByGmailId(request.getMailId())){
+        if(userRepo.existsByMailId(request.getMailId())){
             log.info("{} Mail ID already exists, please try with another mail ID.",request.getMailId());
             throw new BankException("Mail ID already exists, please try with unique mail ID");
         }
@@ -84,7 +84,7 @@ public class AuthServiceImpl implements AuthService {
         long start = System.currentTimeMillis();
         log.info("{} Verify otp request received: {}",request.getMailId(), request);
 
-        UserEntity userEntity = userRepo.findByGmailId(request.getMailId()).orElseThrow(()->{
+        UserEntity userEntity = userRepo.findByMailId(request.getMailId()).orElseThrow(()->{
             log.info("{} Invalid Mail ID provided.",request.getMailId());
             return new BankException("Please provide a valid mail ID");
         });
@@ -147,7 +147,7 @@ public class AuthServiceImpl implements AuthService {
             log.info("{} User fetched from DB using BankID is: {}",user.getBankId(), user.getFirstName());
         }else{
             //mail ID login
-            user = userRepo.findByGmailId(request.getMailId()).orElseThrow(()->{
+            user = userRepo.findByMailId(request.getMailId()).orElseThrow(()->{
                 log.info("{} Invalid request detected,User not exists",request.getMailId());
                 return new BankException("User not exists, please try with a valid request.");
             });

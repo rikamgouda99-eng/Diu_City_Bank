@@ -17,7 +17,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class CustomAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper= new ObjectMapper();
     private final Util util;
 
     @Override

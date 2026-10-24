@@ -1,5 +1,6 @@
 package com.dcb.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -17,7 +18,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class OtpEntity {
     @Id
-    private String id;
+    @Column(name ="mail_id")
+    private String mailId;
     private String otp;
     private LocalDateTime expiry;
 

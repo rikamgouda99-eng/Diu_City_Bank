@@ -46,6 +46,7 @@ public class OtpService {
         String encodedOtp = encoder.encode(String.valueOf(random));
         logger.info("{} otp generated successfully.",mailId);
         OtpEntity otpEntity = new OtpEntity();
+        otpEntity.setMailId(mailId);
         otpEntity.setOtp(encodedOtp);
         otpEntity.setExpiry(LocalDateTime.now().plusMinutes(10));
         otpRepo.save(otpEntity);

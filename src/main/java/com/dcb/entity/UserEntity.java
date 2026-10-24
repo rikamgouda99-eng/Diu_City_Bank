@@ -21,7 +21,7 @@ public class UserEntity
     private  String firstName;
     private  String middleName;
     private  String lastName;
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID uid;
     private  String addressDetails;
     private String phoneNumber;
