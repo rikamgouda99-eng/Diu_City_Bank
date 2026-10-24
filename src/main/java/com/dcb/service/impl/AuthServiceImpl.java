@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -168,6 +169,79 @@ public class AuthServiceImpl implements AuthService {
         log.info("{} User Login successful",request.getBankId());
         log.info("{} Total time taken to process Login request is: {} ms",request.getMailId(),System.currentTimeMillis() - start);
         return Util.getLoginResponse(user.getBankId(), accessToken, refreshToken);
+    }
+
+    @Override
+    public void resetPassword(String id) {
+        long start = System.currentTimeMillis();
+        if(id == null || id.isEmpty()){
+            log.info("Mail ID or Bank ID is required to reset password.");
+            throw new BankException("Mail ID or Bank ID is required to reset password.");
+        }
+        UserEntity user;
+        //Bank ID check
+        Optional<UserEntity> userEntityOptional = userRepo.findById(id);
+        if(userEntityOptional.isEmpty()){
+            //Mail ID check
+            userEntityOptional = userRepo.findByMailId(id);
+            if(userEntityOptional.isEmpty()){
+                log.info("{} User not exists in DB",id);
+                throw new BankException("User not exists, please enter a valid mailId or Bank ID");
+            }
+            //from Mail ID
+            user = userEntityOptional.get();
+        }else{
+            //from Bank ID
+            user = userEntityOptional.get();
+        }
+        log.info("{} User fetched from DB successfully",user.getMailId());
+
+        //generate OTP for reset password
+        otpService.generateOtp(user.getMailId());
+
+        log.info("{} Total time taken to process reset password is: {} ms",user.getBankId(),System.currentTimeMillis() - start);
+
+    }
+
+    @Override
+    public void verifyAndResetPassword(ResetPasswordRequest request) {
+        long start = System.currentTimeMillis();
+
+        UserEntity userEntity = userRepo.findByMailId(request.getMailId()).orElseThrow(()->{
+            log.info("{} Invalid Mail Id provided.",request.getMailId());
+            return new BankException("Please provide a valid mail ID");
+        });
+
+        if(Boolean.FALSE.equals(userEntity.getIsActive())){
+            log.info("{} user is not active, please contact to admin.",userEntity.getMailId());
+            throw new BankException("Something went wrong, please contact our support team.");
+        }
+
+        OtpEntity otp = otpRepo.findById(request.getMailId()).orElseThrow(()->{
+            log.info("{} Invalid mail ID entered, please try with the original one.", request.getMailId());
+            return new BankException("Invalid mail ID entered, please try with the original one.");
+        });
+
+        if(otp.getExpiry().isBefore(LocalDateTime.now())){
+            log.info("{} The OTP is expired, please consider generating a new OTP.",request.getOtp());
+            throw new BankException("OTP is expired.");
+        }
+
+        if(!passwordEncoder.matches(request.getOtp(), otp.getOtp())){
+            log.info("{} OTP mismatch, please provide the correct OTP",request.getOtp());
+            throw new BankException("OTP mismatch, please enter the correct 6 digit OTP.");
+        }
+
+        //delete the otp record
+        otpRepo.delete(otp);
+
+        //reset password
+        userEntity.setPassword(passwordEncoder.encode(request.getPassword()));
+        userEntity.setUpdatedDate(LocalDate.now());
+        userRepo.save(userEntity);
+
+        log.info("{} Password changed successfully.", userEntity.getBankId());
+        log.info("{} Total time taken to process verify OTP & reset password request is: {} ms",request.getMailId(),System.currentTimeMillis() - start);
     }
 
     private String getBankId(){
