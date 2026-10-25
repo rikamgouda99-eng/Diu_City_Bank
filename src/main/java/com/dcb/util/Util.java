@@ -1,9 +1,12 @@
 package com.dcb.util;
 
+import com.dcb.entity.BankAccountEntity;
 import com.dcb.entity.UserEntity;
 import com.dcb.model.APIResponse;
 import com.dcb.model.LoginResponse;
 import com.dcb.model.SignupResponse;
+import com.dcb.model.UserResponse;
+import com.dcb.repository.UserRepo;
 import org.springframework.stereotype.Component;
 
 import java.text.DateFormat;
@@ -49,6 +52,30 @@ public class Util{
                 .bankId(bankId)
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
+                .build();
+    }
+    public static String getAccountNumber(){
+        SimpleDateFormat format = new SimpleDateFormat("MMdd");
+        String batch = format.format(new Date());
+        String serialNumber = String.valueOf(10000000L + new Random().nextLong(90000000L));
+        return "3567" + batch + serialNumber;
+    }
+    public static UserResponse getUserResponse(UserEntity user, BankAccountEntity account){
+        return UserResponse.builder()
+                .bankID(user.getBankId())
+                .mailId(user.getMailId())
+                .dob(user.getDob().toString())
+                .accountBalance(account.getAccountBalance().toString())
+                .accountNumber(account.getAccountNo())
+                .accountOpeningDate(user.getCreatedDate().toString())
+                .accountUpdateDate(user.getUpdatedDate().toString())
+                .address(user.getAddressDetails())
+                .gender(user.getGender())
+                .name(user.getFirstName() + (user.getMiddleName()==null?"":user.getMiddleName()) + user.getLastName())
+                .fixedAccountNumber(account.getAccountNo())
+                .loanAccountNumber(null)//need to change
+                .maritalStatus(user.getMaritalStatus())
+                .phoneNumber(user.getPhoneNumber())
                 .build();
     }
 
