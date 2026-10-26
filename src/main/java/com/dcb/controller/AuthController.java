@@ -75,7 +75,7 @@ public class AuthController {
     //submit the generated otp and new password
     @PostMapping("/submitOtp")
     public ResponseEntity<APIResponse<?>> verifyOtpAndResetPassword(
-            @RequestBody ResetPasswordRequest request
+            @RequestBody @Valid ResetPasswordRequest request
     ){
         authService.verifyAndResetPassword(request);
         return ResponseEntity.ok(utility.getSuccessResponse(null, "Password reset successful, please re-login."));
@@ -87,7 +87,7 @@ public class AuthController {
     ){
         StatusCheckResponse response = statusCheckService.checkUserStatus(bankId);
         log.info("{} Status check response returned: {}",bankId, response);
-        return ResponseEntity.ok(utility.getSuccessResponse(null, "Status Checked successfully."));
+        return ResponseEntity.ok(utility.getSuccessResponse(response, "Status Checked successfully."));
     }
 
 }

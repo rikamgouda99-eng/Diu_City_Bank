@@ -33,7 +33,7 @@ public class AdminController {
     // get all pending approvals
     @GetMapping("/approvals")
     public ResponseEntity<APIResponse<?>> getApprovalRequest(){
-            return ResponseEntity.ok(util.getSuccessResponse(adminService.getPendingApprovals(),"Successfully fetched pending users for approvals."));
+        return ResponseEntity.ok(util.getSuccessResponse(adminService.getPendingApprovals(),"Successfully fetched pending users for approvals."));
     }
 
     //approve a particular user and open account or reject the request
@@ -52,16 +52,16 @@ public class AdminController {
     @GetMapping("/deactivate")
     public ResponseEntity<APIResponse<?>> blockUser(
             @RequestParam String bankId
-    ){
+    ) {
         adminService.deActivateUser(bankId);
         return ResponseEntity.ok(util.getSuccessResponse(null, "User deactivated successfully."));
     }
 
     //activate a particular user
-    @GetMapping("/deactivate")
+    @GetMapping("/activate")
     public ResponseEntity<APIResponse<?>> unBlockUser(
             @RequestParam String bankId
-    ){
+    ) {
         adminService.activateUser(bankId);
         return ResponseEntity.ok(util.getSuccessResponse(null, "User activated successfully."));
     }

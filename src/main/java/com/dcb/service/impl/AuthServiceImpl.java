@@ -205,6 +205,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void verifyAndResetPassword(ResetPasswordRequest request) {
+        log.info("Incoming password reset requst={}",request);
         long start = System.currentTimeMillis();
 
         UserEntity userEntity = userRepo.findByMailId(request.getMailId()).orElseThrow(()->{

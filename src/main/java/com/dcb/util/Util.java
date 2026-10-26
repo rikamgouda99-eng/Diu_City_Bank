@@ -7,6 +7,7 @@ import com.dcb.model.LoginResponse;
 import com.dcb.model.SignupResponse;
 import com.dcb.model.UserResponse;
 import com.dcb.repository.UserRepo;
+import jakarta.validation.constraints.Null;
 import org.springframework.stereotype.Component;
 
 import java.text.DateFormat;
@@ -65,8 +66,8 @@ public class Util{
                 .bankID(user.getBankId())
                 .mailId(user.getMailId())
                 .dob(user.getDob().toString())
-                .accountBalance(account.getAccountBalance().toString())
-                .accountNumber(account.getAccountNo())
+                .accountBalance(account.getAccountBalance()!= null? account.getAccountBalance().toString(): "")
+                .accountNumber(account.getAccountNo()!= null? account.getAccountNo():"")
                 .accountOpeningDate(user.getCreatedDate().toString())
                 .accountUpdateDate(user.getUpdatedDate().toString())
                 .address(user.getAddressDetails())
