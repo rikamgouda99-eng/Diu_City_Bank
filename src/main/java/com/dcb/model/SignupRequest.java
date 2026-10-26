@@ -18,27 +18,27 @@ public class SignupRequest {
     private String mailId;
 
     @NotNull(message = "first name is mandatory, please provide your first name")
-    private  String firstName;
+    private String firstName;
 
-    private  String middleName;
+    private String middleName;
 
     @NotNull(message = "last name is mandatory, please provide your last name")
-    private  String lastName;
+    private String lastName;
 
     @NotNull(message = "Address is mandatory, please provide your address")
-    private  String addressDetails;
+    private String addressDetails;
 
     @NotNull(message = "Phone number is mandatory, please provide phone number")
     private String phoneNumber;
 
-    private  String gender;
+    private String gender;
 
     @NotNull(message = "DOB is mandatory, please provide your DOB")
-    private LocalDate dob;//yyyy-mm-dd
+    private LocalDate dob;
 
     @NotNull(message = "marital status is mandatory, please provide your marital status")
-    private String maritalStatus;//single, married, divorced, prefer not to disclose
+    private String maritalStatus;
 
     @NotNull(message = "Password is mandatory, please provide your password")
-    private  String password;
+    private String password;
 }
