@@ -1,3 +1,4 @@
+
 package com.dcb.config;
 
 import com.dcb.service.CustomAuthenticationEntryPoint;
@@ -29,13 +30,13 @@ import java.util.List;
 public class SecurityConfig {
 
     @Autowired
-    CustomUserDetailsService userDetailsService;
+    private CustomUserDetailsService userDetailsService;
 
     @Autowired
-    CustomAuthenticationEntryPoint authenticationEntryPoint;
+    private CustomAuthenticationEntryPoint authenticationEntryPoint;
 
     @Autowired
-    JwtAuthenticationFilter jwtAuthenticationFilter;
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http)
@@ -45,22 +46,10 @@ public class SecurityConfig {
                 .cors(cors -> {})
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-<<<<<<< HEAD
-                        .requestMatchers(
-                                "/api/v1/public/**"
-                        ).permitAll()
-                        .requestMatchers("/api/v1/admin/**")
-                        .hasRole("ADMIN")
-                        .requestMatchers("/api/v1/**")
-                        .authenticated()
-                        .anyRequest()
-                        .authenticated()
-=======
                         .requestMatchers("/api/v1/public/**").permitAll()
-                        .requestMatchers("/api/product/**").hasRole("ADMIN")
-                        .requestMatchers("/api/**").authenticated()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/**").authenticated()
                         .anyRequest().authenticated()
->>>>>>> 2d44bbe (modified securityConfig and SignupRequest)
                 )
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(
@@ -87,13 +76,16 @@ public class SecurityConfig {
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider =
                 new DaoAuthenticationProvider(userDetailsService);
+
         provider.setPasswordEncoder(passwordEncoder());
+
         return provider;
     }
 
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration config) throws Exception {
+
         return config.getAuthenticationManager();
     }
 
@@ -104,16 +96,20 @@ public class SecurityConfig {
         config.setAllowedOrigins(
                 List.of("http://localhost:5173")
         );
+
         config.setAllowedMethods(
                 List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         );
+
         config.setAllowedHeaders(
                 List.of("Authorization", "Content-Type", "Accept", "Origin")
         );
+
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
+
         source.registerCorsConfiguration("/**", config);
 
         return source;
