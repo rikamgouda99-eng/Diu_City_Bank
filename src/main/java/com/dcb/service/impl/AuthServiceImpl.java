@@ -36,8 +36,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public SignupResponse doSignUp(SignupRequest request) {
         long start = System.currentTimeMillis();
-        request.setPassword(passwordEncoder.encode(request.getPassword()));
-        log.info("{} processing signup request: {}",request.getMailId(), request);
+//        request.setPassword(passwordEncoder.encode(request.getPassword()));
+        log.info("{} processing signup request for: {}",request.getMailId(), request.getFirstName());
 
         //check mail id idempotency
         if(userRepo.existsByMailId(request.getMailId())){
@@ -61,7 +61,9 @@ public class AuthServiceImpl implements AuthService {
         userEntity.setMaritalStatus(request.getMaritalStatus());
         userEntity.setPhoneNumber(request.getPhoneNumber());
         userEntity.setRole("CUSTOMER");
-        userEntity.setPassword(request.getPassword());
+        if(request.getPassword() != null && !request.getPassword().isBlank()){
+            userEntity.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
         userEntity.setStatus("Initiated by customer");
         userEntity.setIsActive(true);
         userEntity.setIsVerified(false);
@@ -83,7 +85,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void verifyOtp(OtpRequest request) {
         long start = System.currentTimeMillis();
-        log.info("{} Verify otp request received: {}",request.getMailId(), request);
+        log.info("{} Verify otp request received.",request.getMailId());
 
         UserEntity userEntity = userRepo.findByMailId(request.getMailId()).orElseThrow(()->{
             log.info("{} Invalid Mail ID provided.",request.getMailId());
@@ -130,7 +132,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse doLogin(LoginRequest request) {
         long start = System.currentTimeMillis();
-        log.info("{} Processing Login request: {}",request.getBankId(), request);
+        log.info("{} Processing Login request for: {}",request.getBankId(), request.getMailId());
 
         UserEntity user;
         //Process Login
@@ -168,7 +170,10 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("{} User Login successful",request.getBankId());
         log.info("{} Total time taken to process Login request is: {} ms",request.getMailId(),System.currentTimeMillis() - start);
-        return Util.getLoginResponse(user.getBankId(), accessToken, refreshToken);
+        LoginResponse response = Util.getLoginResponse(user.getBankId(), accessToken, refreshToken);
+        response.setRole(user.getRole());
+        response.setName(Util.fullName(user));
+        return response;
     }
 
     @Override
@@ -205,7 +210,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void verifyAndResetPassword(ResetPasswordRequest request) {
-        log.info("Incoming password reset requst={}",request);
+        log.info("Incoming password reset request for: {}",request.getMailId());
         long start = System.currentTimeMillis();
 
         UserEntity userEntity = userRepo.findByMailId(request.getMailId()).orElseThrow(()->{

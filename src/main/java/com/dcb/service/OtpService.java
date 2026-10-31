@@ -51,7 +51,7 @@ public class OtpService {
         otpEntity.setExpiry(LocalDateTime.now().plusMinutes(10));
         otpRepo.save(otpEntity);
         executorService.submit(()->mailService.sendOtpMail(mailId,String.valueOf(random)));
-        logger.info("{} OTP sent successfully: {}",mailId, encodedOtp);
+        logger.info("{} OTP sent successfully.",mailId);
     }
 
 }

@@ -1,6 +1,7 @@
 package com.dcb.model;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -39,6 +40,8 @@ public class SignupRequest {
     @NotNull(message = "marital status is mandatory, please provide your marital status")
     private String maritalStatus;
 
-    @NotNull(message = "Password is mandatory, please provide your password")
+    // optional: when given it is stored (BCrypt) so the customer can log in right after OTP verification,
+    // otherwise the password is set through the reset-password OTP flow as before
+    @Size(min = 8, max = 64, message = "Password must be 8-64 characters")
     private String password;
 }

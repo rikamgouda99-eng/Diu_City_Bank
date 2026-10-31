@@ -4,6 +4,7 @@ package com.dcb.config;
 import com.dcb.service.CustomAuthenticationEntryPoint;
 import com.dcb.service.CustomUserDetailsService;
 import com.dcb.service.JwtAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,8 +48,12 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/public/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/v1/**").authenticated()
+                        // profile (photo, password, email) is shared by customers and admins
+                        .requestMatchers("/api/v1/profile/**").authenticated()
+                        // accounts, transactions, bills, FD, cards, loans, KYC, requests
+                        .requestMatchers("/api/v1/**").hasRole("CUSTOMER")
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
@@ -56,8 +61,14 @@ public class SecurityConfig {
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
                 )
-                .exceptionHandling(ex ->
-                        ex.authenticationEntryPoint(authenticationEntryPoint)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler((request, response, denied) -> {
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType("application/json");
+                            response.getWriter().write("{\"isSuccess\":false,\"data\":null,\"message\":\"You are not allowed to access this resource.\",\"timestamp\":\""
+                                    + java.time.LocalDate.now() + "\"}");
+                        })
                 )
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
@@ -94,7 +105,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
 
         config.setAllowedOrigins(
-                List.of("http://localhost:5173")
+                List.of("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173")
         );
 
         config.setAllowedMethods(
@@ -102,8 +113,10 @@ public class SecurityConfig {
         );
 
         config.setAllowedHeaders(
-                List.of("Authorization", "Content-Type", "Accept", "Origin")
+                List.of("Authorization", "Content-Type", "Accept", "Origin", "Idempotency-Key")
         );
+
+        config.setExposedHeaders(List.of("Content-Disposition"));
 
         config.setAllowCredentials(true);
 

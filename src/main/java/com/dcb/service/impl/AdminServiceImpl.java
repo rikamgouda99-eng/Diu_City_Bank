@@ -14,7 +14,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import com.dcb.enums.AccountStatus;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -87,7 +91,10 @@ public class AdminServiceImpl implements AdminService {
             BankAccountEntity bankAccount = new BankAccountEntity();
             bankAccount.setCustomerId(user.getBankId());
             bankAccount.setAccountNo(getBankAccount());
-            bankAccount.setAccountBalance(1_000_00.0D);
+            bankAccount.setAccountBalance(new BigDecimal("100000.00"));
+            bankAccount.setAccountType("SAVINGS");
+            bankAccount.setStatus(AccountStatus.ACTIVE);
+            bankAccount.setCreatedAt(LocalDateTime.now());
             bankRepo.save(bankAccount);
             log.info("{} Bank account created successfully, account number: {}",bankAccount.getCustomerId(), bankAccount.getAccountNo());
 

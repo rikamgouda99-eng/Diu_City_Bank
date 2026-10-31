@@ -1,5 +1,6 @@
 package com.dcb.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -34,6 +35,8 @@ public class UserEntity
     private  Boolean isVerified;
     private  Boolean isApproved;
     private  String status;
+    @JsonIgnore
+    @ToString.Exclude
     private  String password;
     private  String role;
 
