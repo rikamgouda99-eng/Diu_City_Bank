@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { admin } from '../../api/services';
-import { Badge, Details, Dialog, Loading, Notice, PageHead, Pager, Panel, Table, Tabs, date, dateTime, money, words, useAction, useApi } from '../../components/ui';
+import { newKey } from '../../api/client';
+import { AmountInput, Badge, Details, Dialog, Icon, Loading, Notice, PageHead, Pager, Panel, Table, Tabs, date, dateTime, money, words, useAction, useApi } from '../../components/ui';
 import { Person, StatusChips } from '../../components/ui';
 import { TXN_STATUSES, TXN_TYPES, txnColumns } from '../../components/txn';
 
@@ -106,13 +107,63 @@ export function Accounts() {
 
 // ------------------------------------------------------------- transactions
 const TYPES = TXN_TYPES;
+/** Cash deposit and withdrawal at the branch. Only admins can post them; the customer gets a confirmation mail. */
+function CashCounter({ onDone }) {
+  const EMPTY = { kind: 'deposit', accountNo: '', amount: '', description: '' };
+  const [v, setV] = useState(EMPTY);
+  const [key, setKey] = useState(newKey);
+  const [result, setResult] = useState(null);
+  const act = useAction();
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  const deposit = v.kind === 'deposit';
+  const submit = async (e) => {
+    e.preventDefault();
+    const accountNo = v.accountNo.trim();
+    const res = await act.run(() => (deposit ? admin.deposit : admin.withdraw)(accountNo, { amount: v.amount, description: v.description || undefined }, key));
+    if (res) { setResult(res.data); setV({ ...EMPTY, kind: v.kind }); setKey(newKey()); onDone(); }
+  };
+  return (
+    <div className="two" style={{ marginBottom: 20 }}>
+      <form className="panel" onSubmit={submit}>
+        <div className="panel-head"><div><h3><Icon n={deposit ? 'deposit' : 'withdraw'} />Cash counter</h3>
+          <p className="sub">Deposit or withdraw cash for a customer account. The customer is emailed a confirmation.</p></div></div>
+        <div className="seg" role="radiogroup" aria-label="Transaction type" style={{ marginBottom: 0 }}>
+          {[['deposit', 'Deposit'], ['withdraw', 'Withdraw']].map(([k, l]) => (
+            <button key={k} type="button" role="radio" aria-checked={v.kind === k} className={v.kind === k ? 'on' : ''} onClick={() => { setV({ ...v, kind: k }); act.clear(); }}>{l}</button>))}
+        </div>
+        <label>Customer account number<input required inputMode="numeric" pattern="\d{8,20}" title="8-20 digits" value={v.accountNo}
+          onChange={(e) => setV({ ...v, accountNo: e.target.value.replace(/\D/g, '') })} placeholder="e.g. 3567103100000001" /></label>
+        <label>Amount<AmountInput value={v.amount} onChange={(a) => setV({ ...v, amount: a })} /></label>
+        <label>Description <span className="hint">Optional</span><input maxLength={200} value={v.description} onChange={set('description')} placeholder={deposit ? 'e.g. Cash deposit at counter' : 'e.g. Cash withdrawal at counter'} /></label>
+        <Notice error={act.error} />
+        <button disabled={act.busy}>{act.busy ? 'Processing…' : `${deposit ? 'Deposit' : 'Withdraw'}${v.amount ? ` ${money(v.amount)}` : ''}`}</button>
+      </form>
+      {result ? (
+        <Panel title={`${result.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} successful`} icon="check" actions={<Badge v={result.status} />}>
+          <Details data={result} fields={[['accountNo', 'Account'], ['amount', 'Amount', money], ['balanceAfter', 'Updated balance', money], ['transactionId', 'Transaction ID'],
+            ['reference', 'Reference'], ['description', 'Description'], ['createdAt', 'Date & time', dateTime]]} />
+          <button type="button" className="ghost" onClick={() => setResult(null)}>Close</button>
+        </Panel>
+      ) : (
+        <Panel title="Before you post" icon="shield">
+          <ul className="muted" style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 8 }}>
+            <li>Customers can't deposit or withdraw cash themselves, only the bank can.</li>
+            <li>Check the account number and count the cash before posting.</li>
+            <li>A withdrawal is refused if the balance is too low; the attempt is recorded as failed.</li>
+            <li>Each entry is posted once even if the button is pressed twice.</li>
+          </ul>
+        </Panel>)}
+    </div>);
+}
+
 export function Transactions() {
   const [f, setF] = useState({ accountNo: '', reference: '', type: '', status: '', from: '', to: '', page: 0, size: 15 });
   const [applied, setApplied] = useState(f);
   const list = useApi(() => admin.transactions(applied), [applied]);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (<>
-    <PageHead title="Transaction management" sub="Every ledger entry across all accounts." />
+    <PageHead title="Transaction management" sub="Post cash deposits and withdrawals, and review every ledger entry." />
+    <CashCounter onDone={list.reload} />
     <form className="panel filters" onSubmit={(e) => { e.preventDefault(); setApplied({ ...f, page: 0 }); }}>
       <label>Account<input value={f.accountNo} onChange={set('accountNo')} /></label>
       <label>Reference / ID<input value={f.reference} onChange={set('reference')} /></label>

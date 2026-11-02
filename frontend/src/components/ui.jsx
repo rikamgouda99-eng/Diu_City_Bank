@@ -364,7 +364,7 @@ export function Shell({ role, nav, notifications, searchHint, onSearch }) {
                 <NavLink key={to} to={to} title={l} className={({ isActive }) => {
                   const [p, qs] = to.split('?');
                   const active = qs ? location.pathname === p && location.search === `?${qs}`
-                    : isActive && !(to === '/app/transactions' && location.search.includes('tab=transfer'));
+                    : isActive;
                   return `${active ? 'active' : ''} ${danger ? 'danger' : ''}`;
                 }} end={to.split('/').length === 2} onClick={() => setOpen(false)}><Icon n={ic} /><span className="txt">{l}</span></NavLink>))}
             </div>))}

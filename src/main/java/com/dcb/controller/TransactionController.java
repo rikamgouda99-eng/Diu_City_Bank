@@ -5,9 +5,9 @@ import com.dcb.enums.TransactionStatus;
 import com.dcb.enums.TransactionType;
 import com.dcb.exception.BankException;
 import com.dcb.model.APIResponse;
-import com.dcb.model.AmountRequest;
 import com.dcb.model.TransferRequest;
 import com.dcb.service.AccountService;
+import com.dcb.service.NotificationService;
 import com.dcb.service.PdfService;
 import com.dcb.service.TransactionService;
 import com.dcb.util.Util;
@@ -34,6 +34,7 @@ public class TransactionController {
     private final TransactionService transactionService;
     private final AccountService accountService;
     private final PdfService pdfService;
+    private final NotificationService notifier;
     private final Util util;
 
     @GetMapping("/api/v1/accounts/me")
@@ -44,24 +45,6 @@ public class TransactionController {
     @GetMapping("/api/v1/accounts/me/balance")
     public ResponseEntity<APIResponse<?>> balance(@AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(util.getSuccessResponse(accountService.summary(user.getUsername()), "Balance fetched."));
-    }
-
-    @PostMapping("/api/v1/transactions/deposit")
-    public ResponseEntity<APIResponse<?>> deposit(@AuthenticationPrincipal UserDetails user,
-                                                  @RequestHeader(IDEMPOTENCY_KEY) String key,
-                                                  @RequestBody @Valid AmountRequest request) {
-        var response = transactionService.deposit(user.getUsername(), request, key);
-        return ResponseEntity.status(Boolean.TRUE.equals(response.getReplayed()) ? HttpStatus.OK : HttpStatus.CREATED)
-                .body(util.getSuccessResponse(response, "Deposit successful (simulated)."));
-    }
-
-    @PostMapping("/api/v1/transactions/withdraw")
-    public ResponseEntity<APIResponse<?>> withdraw(@AuthenticationPrincipal UserDetails user,
-                                                   @RequestHeader(IDEMPOTENCY_KEY) String key,
-                                                   @RequestBody @Valid AmountRequest request) {
-        var response = transactionService.withdraw(user.getUsername(), request, key);
-        return ResponseEntity.status(Boolean.TRUE.equals(response.getReplayed()) ? HttpStatus.OK : HttpStatus.CREATED)
-                .body(util.getSuccessResponse(response, "Withdrawal successful (simulated)."));
     }
 
     @GetMapping("/api/v1/transactions/beneficiary")
@@ -75,6 +58,23 @@ public class TransactionController {
                                                    @RequestHeader(IDEMPOTENCY_KEY) String key,
                                                    @RequestBody @Valid TransferRequest request) {
         var response = transactionService.transfer(user.getUsername(), request, key);
+        if (!Boolean.TRUE.equals(response.getReplayed())) {
+            notifier.notify(user.getUsername(), "Fund transfer successful",
+                    "Money was sent from your account. The details are below.",
+                    NotificationService.details()
+                            .amount("Amount", response.getAmount())
+                            .add("To", response.getBeneficiaryName() + " (" + response.getToAccount() + ")")
+                            .add("Reference", response.getReference())
+                            .add("Remarks", response.getRemarks())
+                            .amount("Available balance", response.getBalanceAfter()));
+            notifier.notify(transactionService.ownerOf(request.getBeneficiaryAccountNo()), "Money received",
+                    "Money was credited to your account.",
+                    NotificationService.details()
+                            .amount("Amount", response.getAmount())
+                            .add("From", Util.fullName(accountService.getUser(user.getUsername())) + " (" + Util.maskAccount(response.getFromAccount()) + ")")
+                            .add("Reference", response.getReference())
+                            .add("Remarks", response.getRemarks()));
+        }
         return ResponseEntity.status(Boolean.TRUE.equals(response.getReplayed()) ? HttpStatus.OK : HttpStatus.CREATED)
                 .body(util.getSuccessResponse(response, "Transfer successful (simulated)."));
     }

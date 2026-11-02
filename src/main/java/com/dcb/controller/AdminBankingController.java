@@ -7,6 +7,7 @@ import com.dcb.util.Util;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -28,6 +29,7 @@ public class AdminBankingController {
     private final BillService billService;
     private final KycService kycService;
     private final CustomerRequestService requestService;
+    private final NotificationService notifier;
     private final Util util;
 
     @GetMapping("/dashboard")
@@ -56,7 +58,46 @@ public class AdminBankingController {
 
     @PutMapping("/accounts/{accountNo}/status")
     public ResponseEntity<APIResponse<?>> accountStatus(@PathVariable String accountNo, @RequestBody @Valid AccountStatusRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(adminBankingService.setAccountStatus(accountNo, request), "Account status updated."));
+        var response = adminBankingService.setAccountStatus(accountNo, request);
+        notifier.notify(response.getBankId(), "Account status updated",
+                "The bank has changed the status of your account.",
+                NotificationService.details()
+                        .add("Account", Util.maskAccount(response.getAccountNo()))
+                        .add("New status", response.getStatus())
+                        .add("Reason", response.getStatusReason()));
+        return ResponseEntity.ok(util.getSuccessResponse(response, "Account status updated."));
+    }
+
+    /** Cash deposit and withdrawal are branch operations, so only an admin can post them. */
+    @PostMapping("/accounts/{accountNo}/deposit")
+    public ResponseEntity<APIResponse<?>> deposit(@AuthenticationPrincipal UserDetails admin, @PathVariable String accountNo,
+                                                  @RequestHeader("Idempotency-Key") String key,
+                                                  @RequestBody @Valid AmountRequest request) {
+        var response = transactionService.deposit(admin.getUsername(), accountNo.trim(), request, key);
+        if (!Boolean.TRUE.equals(response.getReplayed())) notifyCash(accountNo, "Amount deposited", "was deposited into", response);
+        return ResponseEntity.status(Boolean.TRUE.equals(response.getReplayed()) ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(util.getSuccessResponse(response, "Deposit successful."));
+    }
+
+    @PostMapping("/accounts/{accountNo}/withdraw")
+    public ResponseEntity<APIResponse<?>> withdraw(@AuthenticationPrincipal UserDetails admin, @PathVariable String accountNo,
+                                                   @RequestHeader("Idempotency-Key") String key,
+                                                   @RequestBody @Valid AmountRequest request) {
+        var response = transactionService.withdraw(admin.getUsername(), accountNo.trim(), request, key);
+        if (!Boolean.TRUE.equals(response.getReplayed())) notifyCash(accountNo, "Amount withdrawn", "was withdrawn from", response);
+        return ResponseEntity.status(Boolean.TRUE.equals(response.getReplayed()) ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(util.getSuccessResponse(response, "Withdrawal successful."));
+    }
+
+    private void notifyCash(String accountNo, String subject, String verb, TransactionResponse response) {
+        notifier.notify(transactionService.ownerOf(accountNo.trim()), subject,
+                NotificationService.money(response.getAmount()) + " " + verb + " your account " + Util.maskAccount(response.getAccountNo()) + " at the branch.",
+                NotificationService.details()
+                        .amount("Amount", response.getAmount())
+                        .add("Transaction ID", response.getTransactionId())
+                        .add("Reference", response.getReference())
+                        .add("Description", response.getDescription())
+                        .amount("Available balance", response.getBalanceAfter()));
     }
 
     @GetMapping("/transactions")
@@ -95,13 +136,17 @@ public class AdminBankingController {
     @PutMapping("/kyc/{id}/approve")
     public ResponseEntity<APIResponse<?>> approveKyc(@AuthenticationPrincipal UserDetails admin, @PathVariable Long id,
                                                      @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(kycService.review(id, true, admin.getUsername(), request), "KYC approved."));
+        var response = kycService.review(id, true, admin.getUsername(), request);
+        notifyKyc(response);
+        return ResponseEntity.ok(util.getSuccessResponse(response, "KYC approved."));
     }
 
     @PutMapping("/kyc/{id}/reject")
     public ResponseEntity<APIResponse<?>> rejectKyc(@AuthenticationPrincipal UserDetails admin, @PathVariable Long id,
                                                     @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(kycService.review(id, false, admin.getUsername(), request), "KYC rejected."));
+        var response = kycService.review(id, false, admin.getUsername(), request);
+        notifyKyc(response);
+        return ResponseEntity.ok(util.getSuccessResponse(response, "KYC rejected."));
     }
 
     @GetMapping("/requests")
@@ -113,11 +158,34 @@ public class AdminBankingController {
 
     @PutMapping("/requests/{id}/approve")
     public ResponseEntity<APIResponse<?>> approveRequest(@PathVariable Long id, @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(requestService.decide(id, true, request), "Request approved."));
+        var response = requestService.decide(id, true, request);
+        notifyRequest(response);
+        return ResponseEntity.ok(util.getSuccessResponse(response, "Request approved."));
     }
 
     @PutMapping("/requests/{id}/reject")
     public ResponseEntity<APIResponse<?>> rejectRequest(@PathVariable Long id, @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(requestService.decide(id, false, request), "Request rejected."));
+        var response = requestService.decide(id, false, request);
+        notifyRequest(response);
+        return ResponseEntity.ok(util.getSuccessResponse(response, "Request rejected."));
+    }
+
+    private void notifyKyc(KycResponse kyc) {
+        notifier.notify(kyc.getBankId(), "KYC " + kyc.getStatus().toLowerCase(),
+                "The bank has reviewed your KYC document.",
+                NotificationService.details()
+                        .add("Document", kyc.getDocumentType())
+                        .add("Status", kyc.getStatus())
+                        .add("Bank comment", kyc.getAdminComment()));
+    }
+
+    private void notifyRequest(CustomerRequestResponse r) {
+        notifier.notify(r.getBankId(), "Request " + r.getStatus().toLowerCase(),
+                "The bank has responded to your service request.",
+                NotificationService.details()
+                        .add("Request", r.getSubject())
+                        .add("Type", r.getRequestType())
+                        .add("Status", r.getStatus())
+                        .add("Bank comment", r.getAdminComment()));
     }
 }

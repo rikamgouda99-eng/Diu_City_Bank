@@ -33,7 +33,7 @@ export default function Dashboard() {
   return (<>
     <PageHead title={`Welcome back, ${user.name?.split(' ')[0]}`} sub="Here's what's happening with your money today.">
       <Link className="btn ghost" to="/app/transactions?tab=history"><Icon n="list" />Statements</Link>
-      <Link className="btn" to="/app/transactions?tab=transfer"><Icon n="send" />Send money</Link>
+      <Link className="btn" to="/app/transfer"><Icon n="send" />Send money</Link>
     </PageHead>
     {acc.loading ? <div className="hero-card"><Loading rows={3} /></div> : acc.error ? <Notice error={acc.error} /> : (
       <section className="hero-card" aria-label="Account balance">
@@ -55,16 +55,15 @@ export default function Dashboard() {
           <Badge v={a.status} />
           <div className="row gap">
             <Link className="btn light" to="/app/accounts"><Icon n="wallet" />Details</Link>
-            <Link className="btn" to="/app/transactions?tab=transfer"><Icon n="send" />Transfer</Link>
+            <Link className="btn" to="/app/transfer"><Icon n="send" />Transfer</Link>
           </div>
         </div>
       </section>)}
 
     <nav className="quick" aria-label="Quick actions">
-      <Link to="/app/transactions?tab=deposit"><span className="ic"><Icon n="deposit" /></span>Deposit</Link>
-      <Link to="/app/transactions?tab=withdraw"><span className="ic"><Icon n="withdraw" /></span>Withdraw</Link>
-      <Link to="/app/transactions?tab=transfer"><span className="ic"><Icon n="send" /></span>Transfer</Link>
+      <Link to="/app/transfer"><span className="ic"><Icon n="send" /></span>Transfer</Link>
       <Link to="/app/bills"><span className="ic"><Icon n="receipt" /></span>Pay Bills</Link>
+      <Link to="/app/cards"><span className="ic"><Icon n="card" /></span>Cards</Link>
       <Link to="/app/transactions?tab=mini"><span className="ic"><Icon n="list" /></span>Mini Statement</Link>
     </nav>
 

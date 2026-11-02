@@ -3,6 +3,7 @@ package com.dcb.controller;
 import com.dcb.model.APIResponse;
 import com.dcb.model.FdCreateRequest;
 import com.dcb.service.FixedDepositService;
+import com.dcb.service.NotificationService;
 import com.dcb.util.Util;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class FixedDepositController {
 
     private final FixedDepositService fdService;
+    private final NotificationService notifier;
     private final Util util;
 
     @GetMapping("/rates")
@@ -35,6 +37,12 @@ public class FixedDepositController {
                                                  @RequestHeader("Idempotency-Key") String key,
                                                  @RequestBody @Valid FdCreateRequest request) {
         var response = fdService.create(user.getUsername(), request, key);
+        if (!Boolean.TRUE.equals(response.getReplayed())) {
+            notifier.notify(user.getUsername(), "Fixed deposit booked", "Your fixed deposit was booked and sent to the bank for approval.",
+                    NotificationService.details().add("FD number", response.getFdId()).amount("Principal", response.getPrincipal())
+                            .add("Interest rate", response.getInterestRate() + "% p.a.").add("Maturity date", response.getMaturityDate())
+                            .amount("Maturity amount", response.getMaturityAmount()));
+        }
         return ResponseEntity.status(Boolean.TRUE.equals(response.getReplayed()) ? HttpStatus.OK : HttpStatus.CREATED)
                 .body(util.getSuccessResponse(response, "FD booked and sent for approval (simulated)."));
     }
@@ -68,6 +76,9 @@ public class FixedDepositController {
     public ResponseEntity<APIResponse<?>> close(@AuthenticationPrincipal UserDetails user,
                                                 @RequestHeader("Idempotency-Key") String key,
                                                 @PathVariable String fdId) {
-        return ResponseEntity.ok(util.getSuccessResponse(fdService.close(user.getUsername(), fdId, key), "FD closed and amount credited (simulated)."));
+        var response = fdService.close(user.getUsername(), fdId, key);
+        notifier.notify(user.getUsername(), "Fixed deposit closed", "Your fixed deposit was closed and the payout was credited to your account.",
+                NotificationService.details().add("FD number", response.getFdId()).amount("Payout", response.getPayoutAmount()).add("Closure", response.getClosureType()));
+        return ResponseEntity.ok(util.getSuccessResponse(response, "FD closed and amount credited (simulated)."));
     }
 }

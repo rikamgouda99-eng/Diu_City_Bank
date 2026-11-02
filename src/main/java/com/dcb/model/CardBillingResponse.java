@@ -18,4 +18,6 @@ public class CardBillingResponse {
     private BigDecimal minimumDue;
     private LocalDate statementDate;
     private LocalDate paymentDueDate;
+    private LocalDate nextStatementDate;
+    private Long daysToDue;
 }

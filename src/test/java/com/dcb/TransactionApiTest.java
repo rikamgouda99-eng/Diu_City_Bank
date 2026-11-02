@@ -14,12 +14,12 @@ class TransactionApiTest extends ApiTestSupport {
     @Test
     void depositAndWithdrawUpdateBalance() {
         Customer c = customer("1000.00");
-        Res dep = post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "500.00"), key());
+        Res dep = cash("deposit", c, "500.00");
         assertEquals(201, dep.status(), dep.message());
         assertEquals("SUCCESS", dep.data().path("status").asText());
         assertEquals(0, new BigDecimal("1500.00").compareTo(dep.data().path("balanceAfter").decimalValue()));
 
-        Res wd = post("/api/v1/transactions/withdraw", c.token(), Map.of("amount", "200.50"), key());
+        Res wd = cash("withdraw", c, "200.50");
         assertEquals(201, wd.status(), wd.message());
         assertEquals(0, new BigDecimal("1299.50").compareTo(balance(c.accountNo())));
 
@@ -30,7 +30,7 @@ class TransactionApiTest extends ApiTestSupport {
     @Test
     void insufficientWithdrawalIsRejectedAndRecordedAsFailed() {
         Customer c = customer("1000.00");
-        Res wd = post("/api/v1/transactions/withdraw", c.token(), Map.of("amount", "5000.00"), key());
+        Res wd = cash("withdraw", c, "5000.00");
         assertEquals(422, wd.status());
         assertTrue(wd.message().contains("Insufficient balance"));
         assertEquals(0, new BigDecimal("1000.00").compareTo(balance(c.accountNo())));
@@ -42,10 +42,10 @@ class TransactionApiTest extends ApiTestSupport {
     @Test
     void invalidAmountsAreRejected() {
         Customer c = customer("1000.00");
-        assertEquals(400, post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "0"), key()).status());
-        assertEquals(400, post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "-10"), key()).status());
-        assertEquals(400, post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "10.123"), key()).status());
-        Res noKey = post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "10"), null);
+        assertEquals(400, cash("deposit", c, "0").status());
+        assertEquals(400, cash("deposit", c, "-10").status());
+        assertEquals(400, cash("deposit", c, "10.123").status());
+        Res noKey = post("/api/v1/admin/accounts/" + c.accountNo() + "/deposit", admin(), Map.of("amount", "10"), null);
         assertEquals(400, noKey.status());
         assertTrue(noKey.message().contains("Idempotency-Key"));
     }
@@ -58,7 +58,7 @@ class TransactionApiTest extends ApiTestSupport {
         Res lookup = get("/api/v1/transactions/beneficiary?accountNo=" + b.accountNo(), a.token());
         assertEquals(200, lookup.status());
         assertEquals("ACTIVE", lookup.data().path("status").asText());
-        assertTrue(lookup.data().path("holderName").asText().contains("*"), "holder name must be masked");
+        assertEquals("Test Customer" + b.bankId().substring(3), lookup.data().path("holderName").asText(), "holder name is shown in full");
         assertTrue(lookup.data().path("bankId").isMissingNode(), "bank ID must not be exposed");
 
         Res tr = post("/api/v1/transactions/transfer", a.token(),
@@ -124,9 +124,9 @@ class TransactionApiTest extends ApiTestSupport {
     void historyFiltersPaginationAndMiniStatement() {
         Customer c = customer("1000.00");
         for (int i = 1; i <= 3; i++) {
-            post("/api/v1/transactions/deposit", c.token(), Map.of("amount", i + "0.00"), key());
+            cash("deposit", c, i + "0.00");
         }
-        post("/api/v1/transactions/withdraw", c.token(), Map.of("amount", "5.00"), key());
+        cash("withdraw", c, "5.00");
 
         assertEquals(3, get("/api/v1/transactions/history?type=DEPOSIT", c.token()).data().path("totalElements").asInt());
         Res paged = get("/api/v1/transactions/history?page=0&size=2", c.token());
@@ -145,7 +145,7 @@ class TransactionApiTest extends ApiTestSupport {
     void receiptAndStatementArePdfsAndOnlyForTheOwner() {
         Customer c = customer("1000.00");
         Customer other = customer("1000.00");
-        String txnId = post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "10"), key()).data().path("transactionId").asText();
+        String txnId = cash("deposit", c, "10").data().path("transactionId").asText();
 
         Res receipt = get("/api/v1/transactions/" + txnId + "/receipt", c.token());
         assertEquals(200, receipt.status());

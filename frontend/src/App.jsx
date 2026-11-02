@@ -5,7 +5,7 @@ import { Shell } from './components/ui';
 import { customerNotifications, adminNotifications } from './components/notifications';
 import CustomerDashboard from './pages/customer/Dashboard';
 import Accounts from './pages/customer/Accounts';
-import Transactions from './pages/customer/Transactions';
+import Transactions, { FundTransfer } from './pages/customer/Transactions';
 import Bills from './pages/customer/Bills';
 import FixedDeposits from './pages/customer/FixedDeposits';
 import Cards from './pages/customer/Cards';
@@ -21,7 +21,7 @@ import * as P from './pages/admin/Products';
 // [path, label, icon, danger?]
 const customerNav = [
   { section: 'Overview', items: [['/app', 'Dashboard', 'grid'], ['/app/accounts', 'My Accounts', 'wallet']] },
-  { section: 'Banking', items: [['/app/transactions', 'Transactions', 'swap'], ['/app/transactions?tab=transfer', 'Fund Transfer', 'send'],
+  { section: 'Banking', items: [['/app/transactions', 'Transactions', 'swap'], ['/app/transfer', 'Fund Transfer', 'send'],
     ['/app/bills', 'Bill Payments', 'receipt'], ['/app/fd', 'Fixed Deposits', 'vault'], ['/app/cards', 'Cards', 'card'], ['/app/loans', 'Loans & EMI', 'loan']] },
   { section: 'Account', items: [['/app/profile', 'My Profile', 'user'], ['/app/requests', 'Requests', 'inbox'], ['/app/settings', 'Settings', 'settings']] },
 ];
@@ -43,6 +43,7 @@ export default function App() {
         <Route index element={<CustomerDashboard />} />
         <Route path="accounts" element={<Accounts />} />
         <Route path="transactions" element={<Transactions />} />
+        <Route path="transfer" element={<FundTransfer />} />
         <Route path="bills" element={<Bills />} />
         <Route path="fd" element={<FixedDeposits />} />
         <Route path="cards" element={<Cards />} />

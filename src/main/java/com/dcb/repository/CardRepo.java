@@ -33,4 +33,9 @@ public interface CardRepo extends JpaRepository<CardEntity, Long> {
     Page<CardEntity> search(@Param("status") CardStatus status, @Param("cardType") CardType cardType, Pageable pageable);
 
     long countByStatus(CardStatus status);
+
+    /** Credit cards that still owe money, for the due date reminder job. */
+    @Query("select c from CardEntity c where c.cardType = com.dcb.enums.CardType.CREDIT " +
+            "and c.issuedDate is not null and c.creditUsed > 0 and c.status in :statuses")
+    List<CardEntity> findCreditCardsWithDues(@Param("statuses") Collection<CardStatus> statuses);
 }

@@ -14,6 +14,8 @@ class SecurityAdminApiTest extends ApiTestSupport {
         Customer c = customer("100.00");
         assertEquals(403, get("/api/v1/admin/dashboard", c.token()).status());
         assertEquals(403, get("/api/v1/admin/transactions", c.token()).status());
+        assertEquals(403, post("/api/v1/admin/accounts/" + c.accountNo() + "/deposit", c.token(), Map.of("amount", "100"), key()).status(),
+                "customers can't deposit or withdraw themselves");
         assertEquals(403, put("/api/v1/admin/accounts/" + c.accountNo() + "/status", c.token(), Map.of("status", "ACTIVE")).status());
         assertEquals(403, get("/api/v1/admin/approvals", c.token()).status());
     }
@@ -21,7 +23,7 @@ class SecurityAdminApiTest extends ApiTestSupport {
     @Test
     void adminsCannotUseCustomerBankingApis() {
         String admin = admin();
-        assertEquals(403, post("/api/v1/transactions/deposit", admin, Map.of("amount", "100"), key()).status());
+        assertEquals(403, post("/api/v1/transactions/transfer", admin, Map.of("amount", "100"), key()).status());
         assertEquals(403, get("/api/v1/cards", admin).status());
         assertEquals(200, get("/api/v1/profile", admin).status(), "profile is shared");
     }
@@ -37,7 +39,7 @@ class SecurityAdminApiTest extends ApiTestSupport {
     void adminDashboardCustomersAndTransactions() {
         Customer c = customer("100.00");
         String admin = admin();
-        post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "50"), key());
+        assertEquals(201, cash("deposit", c, "50").status());
 
         Res dashboard = get("/api/v1/admin/dashboard", admin);
         assertEquals(200, dashboard.status());
@@ -70,7 +72,7 @@ class SecurityAdminApiTest extends ApiTestSupport {
 
         assertEquals(200, put("/api/v1/admin/requests/" + id + "/approve", admin, Map.of("comment", "closed")).status());
         assertEquals("CLOSED", get("/api/v1/accounts/me", c.token()).data().path("status").asText());
-        Res deposit = post("/api/v1/transactions/deposit", c.token(), Map.of("amount", "10"), key());
+        Res deposit = cash("deposit", c, "10");
         assertEquals(400, deposit.status());
         assertTrue(deposit.message().contains("closed"));
     }

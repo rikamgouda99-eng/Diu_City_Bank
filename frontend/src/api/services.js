@@ -19,8 +19,6 @@ export const account = {
 };
 
 export const txn = {
-  deposit: (data, key) => http.post('/v1/transactions/deposit', data, key),
-  withdraw: (data, key) => http.post('/v1/transactions/withdraw', data, key),
   beneficiary: (accountNo) => http.get(`/v1/transactions/beneficiary?accountNo=${enc(accountNo)}`),
   transfer: (data, key) => http.post('/v1/transactions/transfer', data, key),
   history: (filters) => http.get(`/v1/transactions/history${qs(filters)}`),
@@ -76,6 +74,8 @@ export const cards = {
   list: () => http.get('/v1/cards'),
   get: (id) => http.get(`/v1/cards/${id}`),
   limit: (id) => http.get(`/v1/cards/${id}/limit`),
+  number: (id) => http.get(`/v1/cards/${id}/number`),
+  sendOtp: (id) => http.post(`/v1/cards/${id}/otp`),
   pin: (id, data) => http.put(`/v1/cards/${id}/pin`, data),
   block: (id) => http.put(`/v1/cards/${id}/block`),
   unblock: (id) => http.put(`/v1/cards/${id}/unblock`),
@@ -114,6 +114,8 @@ export const admin = {
 
   customers: (search, page) => http.get(`/v1/admin/customers${qs({ search, page, size: 10 })}`),
   accounts: (search, page) => http.get(`/v1/admin/accounts${qs({ search, page, size: 10 })}`),
+  deposit: (accountNo, data, key) => http.post(`/v1/admin/accounts/${enc(accountNo)}/deposit`, data, key),
+  withdraw: (accountNo, data, key) => http.post(`/v1/admin/accounts/${enc(accountNo)}/withdraw`, data, key),
   accountStatus: (accountNo, status, reason) => http.put(`/v1/admin/accounts/${enc(accountNo)}/status`, { status, reason }),
   transactions: (filters) => http.get(`/v1/admin/transactions${qs(filters)}`),
   bills: (filters) => http.get(`/v1/admin/bills${qs(filters)}`),

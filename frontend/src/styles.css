@@ -282,7 +282,7 @@ tr.clickable { cursor: pointer; } tr.sel td { background: var(--blue-50) !import
 .hero-card .meta span b { color: #fff; font-weight: 600; }
 .hero-card .side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: var(--s4); position: relative; z-index: 1; }
 .hero-card .badge { background: rgba(16, 185, 129, .16); color: #6EE7B7; } .hero-card .badge.bad { background: rgba(239, 68, 68, .18); color: #FCA5A5; }
-.quick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s3); margin-bottom: var(--s6); }
+.quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); margin-bottom: var(--s6); }
 .quick a { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: var(--s5) var(--s2); background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--r-lg); text-decoration: none; color: var(--ink-2); font-weight: 600; font-size: .86rem;
   box-shadow: var(--sh-1); transition: transform .2s var(--ease), box-shadow .2s, border-color .2s; }
@@ -442,7 +442,7 @@ tr.clickable { cursor: pointer; } tr.sel td { background: var(--blue-50) !import
   .topbar .greet span { display: none; }
   .search { display: none; }
   main { padding: var(--s5) var(--s4); }
-  .quick { grid-template-columns: repeat(5, minmax(84px, 1fr)); overflow-x: auto; padding-bottom: 4px; }
+  .quick { grid-template-columns: repeat(4, minmax(84px, 1fr)); overflow-x: auto; padding-bottom: 4px; }
   .hero-card { grid-template-columns: 1fr; padding: var(--s6); }
   .hero-card .side { flex-direction: row; align-items: center; flex-wrap: wrap; }
   .hero-card .side .row { flex-wrap: nowrap; }

@@ -19,6 +19,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,18 +39,68 @@ public class BillService {
     private final BillPaymentRepo billRepo;
     private final CardRepo cardRepo;
 
-    public Map<String, List<String>> options() {
+    /** What each bill type asks for: the number to pay against and who the provider is. */
+    public record Biller(String numberLabel, String numberPattern, String numberHint, String providerLabel, List<String> providers) {
+    }
+
+    private static final Map<BillType, Biller> BILLERS = new EnumMap<>(Map.of(
+            BillType.ELECTRICITY, new Biller("Consumer number", "[A-Za-z0-9\\-]{6,20}", "6-20 letters, digits or hyphens",
+                    "Electricity board", List.of("Electricity Department Diu", "Gujarat Urja Vikas Nigam (GUVNL)", "Tata Power", "Adani Electricity", "BSES Rajdhani", "MSEDCL")),
+            BillType.WATER, new Biller("Connection number", "[A-Za-z0-9\\-]{5,20}", "5-20 letters, digits or hyphens",
+                    "Water board", List.of("Diu Municipal Council", "Delhi Jal Board", "Mumbai Municipal Corporation", "Bangalore Water Supply (BWSSB)", "Hyderabad Metro Water Board")),
+            BillType.MOBILE_RECHARGE, new Biller("Mobile number", "[6-9]\\d{9}", "10 digit mobile number",
+                    "Network provider", List.of("Jio", "Airtel", "Vi (Vodafone Idea)", "BSNL")),
+            BillType.INTERNET, new Biller("Account / customer ID", "[A-Za-z0-9\\-]{4,20}", "4-20 letters, digits or hyphens",
+                    "Internet provider", List.of("JioFiber", "Airtel Xstream Fiber", "BSNL Broadband", "ACT Fibernet", "Hathway")),
+            BillType.GAS, new Biller("Consumer number", "[A-Za-z0-9\\-]{5,20}", "5-20 letters, digits or hyphens",
+                    "Gas provider", List.of("Indane", "Bharat Gas", "HP Gas", "Gujarat Gas", "Adani Total Gas")),
+            BillType.DTH, new Biller("Subscriber ID", "\\d{8,12}", "8-12 digit subscriber ID",
+                    "DTH operator", List.of("Tata Play", "Airtel Digital TV", "Dish TV", "Sun Direct", "d2h")),
+            BillType.OTHER, new Biller("Consumer / reference number", "[A-Za-z0-9\\-]{4,30}", "4-30 letters, digits or hyphens",
+                    "Biller name", List.of())));
+
+    /** UPI is no longer offered; old UPI payments stay readable in history. */
+    private static final List<PaymentMode> PAYMENT_MODES = List.of(PaymentMode.DEBIT_CARD, PaymentMode.CREDIT_CARD, PaymentMode.BANK_DRAFT);
+
+    public Map<String, Object> options() {
+        Map<String, Biller> billers = new LinkedHashMap<>();
+        BILLERS.forEach((type, biller) -> billers.put(type.name(), biller));
         return Map.of(
                 "billTypes", Arrays.stream(BillType.values()).map(Enum::name).toList(),
-                "paymentModes", Arrays.stream(PaymentMode.values()).map(Enum::name).toList());
+                "paymentModes", PAYMENT_MODES.stream().map(Enum::name).toList(),
+                "billers", billers);
+    }
+
+    /** Checks the number and provider match what the chosen bill type needs. */
+    private void validateBiller(BillPaymentRequest request) {
+        Biller biller = BILLERS.get(request.getBillType());
+        String number = request.getConsumerNumber() == null ? "" : request.getConsumerNumber().trim();
+        if (!number.matches(biller.numberPattern())) {
+            throw new BankException(biller.numberLabel() + " must be " + biller.numberHint() + ".");
+        }
+        String provider = Util.blankToNull(request.getBillerName());
+        if (provider == null) {
+            throw new BankException("Please choose the " + biller.providerLabel().toLowerCase() + ".");
+        }
+        if (!biller.providers().isEmpty() && !biller.providers().contains(provider.trim())) {
+            throw new BankException("Please choose a valid " + biller.providerLabel().toLowerCase() + ".");
+        }
     }
 
     public BillPaymentResponse pay(String bankId, BillPaymentRequest request, String idempotencyKey) {
         transactionService.validateAmount(request.getAmount());
         idempotencyService.validateKey(idempotencyKey);
+        if (!PAYMENT_MODES.contains(request.getPaymentMode())) {
+            throw new BankException(request.getPaymentMode().name().replace('_', ' ') + " is not available for bill payments.");
+        }
+        validateBiller(request);
+        request.setConsumerNumber(request.getConsumerNumber().trim());
         boolean cardMode = request.getPaymentMode() == PaymentMode.DEBIT_CARD || request.getPaymentMode() == PaymentMode.CREDIT_CARD;
         if (cardMode && (request.getCardId() == null || request.getCardPin() == null)) {
             throw new BankException("Card and card PIN are mandatory for card payments.");
+        }
+        if (request.getPaymentMode() == PaymentMode.CREDIT_CARD) {
+            cardService.confirmCreditPayment(bankId, request.getCardId(), request.getCardPin(), request.getOtp());
         }
 
         return executor.run(() -> {
@@ -61,8 +113,9 @@ public class BillService {
             }
 
             String reference = Util.generateReference("BIL");
-            String billerLabel = request.getBillType().name().replace('_', ' ') + " bill "
-                    + request.getConsumerNumber() + (Util.blankToNull(request.getBillerName()) == null ? "" : " (" + request.getBillerName().trim() + ")");
+            String billerLabel = request.getBillType() == BillType.MOBILE_RECHARGE
+                    ? request.getBillerName().trim() + " recharge " + request.getConsumerNumber()
+                    : request.getBillType().name().replace('_', ' ') + " bill " + request.getConsumerNumber() + " (" + request.getBillerName().trim() + ")";
 
             String transactionId = null;
             Long cardTransactionId = null;

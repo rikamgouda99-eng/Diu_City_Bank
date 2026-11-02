@@ -88,6 +88,12 @@ public class BankProperties {
         /** Day of month on which the simulated credit card statement is generated. */
         private int statementDay = 1;
         private int paymentDueDays = 20;
+        /** Secret used to encrypt the full card number so the owner can reveal it. Change it in production. */
+        private String panSecret = "change-me-diu-city-bank-card-number-key";
+        /** Minutes a credit card payment OTP stays valid. */
+        private int otpValidityMinutes = 5;
+        /** A due date reminder mail goes out this many days before the payment due date (and on the day itself). */
+        private int reminderDaysBefore = 3;
     }
 
     @Data

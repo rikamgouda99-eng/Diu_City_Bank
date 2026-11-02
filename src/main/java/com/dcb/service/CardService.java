@@ -13,6 +13,7 @@ import com.dcb.exception.NotFoundException;
 import com.dcb.model.*;
 import com.dcb.repository.CardRepo;
 import com.dcb.repository.CardTransactionRepo;
+import com.dcb.util.CardNumberCipher;
 import com.dcb.util.Util;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,12 +29,14 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Simulated debit and credit cards. Card numbers and CVVs are generated at issuance and
- * thrown away: only the masked number, a random token and BCrypt hashes are stored.
+ * Simulated debit and credit cards. CVVs are generated at issuance and only their BCrypt hash is kept;
+ * the full card number is stored AES encrypted so the owner can reveal it. Credit card payments
+ * are confirmed with the card PIN and an OTP mailed to the owner.
  */
 @Service
 @Slf4j
@@ -53,6 +56,8 @@ public class CardService {
     private final FinancialExecutor executor;
     private final PasswordEncoder passwordEncoder;
     private final BankProperties props;
+    private final CardOtpService cardOtpService;
+    private final CardNumberCipher cardNumberCipher;
 
     // ------------------------------------------------------------------ customer
 
@@ -109,6 +114,53 @@ public class CardService {
                 .used(used)
                 .available(card.getCardLimit().subtract(used).max(BigDecimal.ZERO))
                 .build();
+    }
+
+    /**
+     * Full card number for the owner's show/hide toggle. Cards issued before full numbers were stored only
+     * kept their last four digits, so they get a full number that keeps those digits (and the scheme prefix)
+     * the first time it is asked for, and it is stored encrypted from then on.
+     */
+    @Transactional
+    public Map<String, String> revealNumber(String bankId, Long cardId) {
+        CardEntity card = lockOwn(bankId, cardId);
+        requireStatus(card, CardStatus.ACTIVE, CardStatus.BLOCKED);
+        if (card.getPanEncrypted() == null) {
+            String last4 = card.getMaskedNumber().substring(card.getMaskedNumber().length() - 4);
+            card.setPanEncrypted(cardNumberCipher.encrypt(panEndingWith(card.getCardScheme(), last4)));
+            card.setUpdatedAt(LocalDateTime.now());
+            cardRepo.save(card);
+            log.info("{} full number created for card {} issued before numbers were stored", bankId, cardId);
+        }
+        String pan = cardNumberCipher.decrypt(card.getPanEncrypted());
+        log.info("{} viewed the full number of card {}", bankId, cardId);
+        return Map.of("cardNumber", pan.replaceAll("(\\d{4})(?=\\d)", "$1 "));
+    }
+
+    /** Mails an OTP that confirms the next payment on this credit card. */
+    public void sendPaymentOtp(String bankId, Long cardId) {
+        CardEntity card = own(bankId, cardId);
+        if (card.getCardType() != CardType.CREDIT) {
+            throw new BankException("OTP is only needed for credit card payments.");
+        }
+        requireStatus(card, CardStatus.ACTIVE, CardStatus.BLOCKED, CardStatus.REPLACED);
+        cardOtpService.send(card);
+    }
+
+    /**
+     * A credit card payment needs the card PIN and the mailed OTP. The PIN is checked first, so a
+     * mistyped PIN doesn't use up the OTP. Debit cards are left to the PIN check in lockUsableCard.
+     */
+    public void confirmCreditPayment(String bankId, Long cardId, String pin, String otp) {
+        CardEntity card = own(bankId, cardId);
+        if (card.getCardType() != CardType.CREDIT) return;
+        if (card.getPinHash() == null) {
+            throw new BankException("Please set a PIN for this card before using it.");
+        }
+        if (pin == null || !passwordEncoder.matches(pin, card.getPinHash())) {
+            throw new BankException("Incorrect card PIN.");
+        }
+        cardOtpService.verify(card.getCardId(), otp);
     }
 
     @Transactional
@@ -188,6 +240,7 @@ public class CardService {
     public CardTransactionResponse simulate(String bankId, Long cardId, CardSimulationRequest request, String idempotencyKey) {
         validateAmount(request.getAmount());
         idempotencyService.validateKey(idempotencyKey);
+        confirmCreditPayment(bankId, cardId, request.getPin(), request.getOtp());
         return executor.run(() -> {
             // lock order everywhere: account first, then card
             BankAccountEntity account = accountService.lockOperableAccount(bankId);
@@ -207,6 +260,7 @@ public class CardService {
     public CardTransactionResponse payDues(String bankId, Long cardId, CardRepaymentRequest request, String idempotencyKey) {
         validateAmount(request.getAmount());
         idempotencyService.validateKey(idempotencyKey);
+        confirmCreditPayment(bankId, cardId, request.getPin(), request.getOtp());
         return executor.run(() -> {
             BankAccountEntity account = accountService.lockOperableAccount(bankId);
             CardEntity card = lockOwn(bankId, cardId);
@@ -377,6 +431,7 @@ public class CardService {
 
         String pan = generatePan(card.getCardScheme());
         card.setMaskedNumber("XXXX XXXX XXXX " + pan.substring(12));
+        card.setPanEncrypted(cardNumberCipher.encrypt(pan));
         card.setCardToken(UUID.randomUUID().toString());
         card.setCvvHash(passwordEncoder.encode(Util.randomDigits(3)));
         card.setCardLimit(limit);
@@ -495,13 +550,44 @@ public class CardService {
         return response;
     }
 
-    /** 16 digit number with a valid Luhn check digit. Only its last four digits are kept. */
-    static String generatePan(CardScheme scheme) {
-        String prefix = switch (scheme) {
+    /** 16 digit Luhn-valid number for the scheme that ends with the given four digits. */
+    static String panEndingWith(CardScheme scheme, String last4) {
+        String prefix = schemePrefix(scheme);
+        char[] digits = (prefix + Util.randomDigits(12 - prefix.length()) + last4).toCharArray();
+        // changing one digit in front of the last four shifts the Luhn sum through every value mod 10,
+        // so exactly one value of it makes the whole number valid
+        int fix = 11;
+        for (int d = 0; d <= 9; d++) {
+            digits[fix] = (char) ('0' + d);
+            if (luhnValid(new String(digits))) break;
+        }
+        return new String(digits);
+    }
+
+    static boolean luhnValid(String number) {
+        int sum = 0;
+        for (int i = 0; i < number.length(); i++) {
+            int digit = number.charAt(number.length() - 1 - i) - '0';
+            if (i % 2 == 1) {
+                digit *= 2;
+                if (digit > 9) digit -= 9;
+            }
+            sum += digit;
+        }
+        return sum % 10 == 0;
+    }
+
+    private static String schemePrefix(CardScheme scheme) {
+        return switch (scheme) {
             case VISA -> "4";
             case MASTERCARD -> "5" + (1 + Integer.parseInt(Util.randomDigits(1)) % 5);
             case RUPAY -> "60";
         };
+    }
+
+    /** 16 digit number with a valid Luhn check digit. */
+    static String generatePan(CardScheme scheme) {
+        String prefix = schemePrefix(scheme);
         String body = prefix + Util.randomDigits(15 - prefix.length());
         int sum = 0;
         for (int i = 0; i < body.length(); i++) {
@@ -542,7 +628,7 @@ public class CardService {
                 .simulated(true);
         if (issued && c.getCardType() == CardType.CREDIT) {
             BigDecimal used = nz(c.getCreditUsed());
-            b.creditUsed(used).availableCredit(c.getCardLimit().subtract(used).max(BigDecimal.ZERO)).billing(billing(used));
+            b.creditUsed(used).availableCredit(c.getCardLimit().subtract(used).max(BigDecimal.ZERO)).billing(billing(c, LocalDate.now()));
         } else if (issued) {
             BigDecimal spent = spentToday(c);
             b.spentToday(spent).availableToday(c.getCardLimit().subtract(spent).max(BigDecimal.ZERO));
@@ -550,10 +636,21 @@ public class CardService {
         return b.build();
     }
 
-    private CardBillingResponse billing(BigDecimal outstanding) {
-        LocalDate today = LocalDate.now();
+    /**
+     * Billing cycle of a credit card on a given day. A statement is generated on the statement day every
+     * month and must be paid within paymentDueDays. While the latest statement is still open (generated
+     * after the card was issued and its due date not yet passed) it is the one shown; otherwise the next
+     * statement and its due date are shown. A statement from before the card was issued is never shown.
+     */
+    public CardBillingResponse billing(CardEntity card, LocalDate today) {
+        BigDecimal outstanding = nz(card.getCreditUsed());
         int day = Math.min(Math.max(props.getCard().getStatementDay(), 1), 28);
-        LocalDate statement = today.getDayOfMonth() >= day ? today.withDayOfMonth(day) : today.minusMonths(1).withDayOfMonth(day);
+        int dueDays = props.getCard().getPaymentDueDays();
+        LocalDate latest = today.getDayOfMonth() >= day ? today.withDayOfMonth(day) : today.minusMonths(1).withDayOfMonth(day);
+        LocalDate next = latest.plusMonths(1);
+        boolean latestIsOpen = card.getIssuedDate() != null && latest.isAfter(card.getIssuedDate())
+                && !today.isAfter(latest.plusDays(dueDays));
+        LocalDate statement = latestIsOpen ? latest : next;
         BigDecimal minimumDue = outstanding.multiply(props.getCard().getMinimumDuePercent())
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
                 .max(outstanding.min(new BigDecimal("100.00")));
@@ -561,7 +658,9 @@ public class CardService {
                 .totalOutstanding(outstanding)
                 .minimumDue(minimumDue)
                 .statementDate(statement)
-                .paymentDueDate(statement.plusDays(props.getCard().getPaymentDueDays()))
+                .paymentDueDate(statement.plusDays(dueDays))
+                .nextStatementDate(next)
+                .daysToDue(java.time.temporal.ChronoUnit.DAYS.between(today, statement.plusDays(dueDays)))
                 .build();
     }
 

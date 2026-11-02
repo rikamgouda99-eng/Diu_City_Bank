@@ -11,8 +11,8 @@ const FEATURES = [
 ];
 const SERVICES = [
   ['wallet', 'Savings account', 'Balance, statements and account details in one place.'],
-  ['swap', 'Transactions', 'Deposits, withdrawals, transfers and full history with filters.'],
-  ['receipt', 'Bill payments', 'Electricity, water, mobile, internet and more via UPI or card.'],
+  ['swap', 'Transactions', 'Fund transfers with instant email alerts and full history with filters.'],
+  ['receipt', 'Bill payments', 'Mobile recharge, electricity, water, internet and more by card or bank draft.'],
   ['vault', 'Fixed deposits', 'Quarterly compounding with clear premature-closure rules.'],
   ['card', 'Cards', 'Premium debit and credit cards with spend and credit limits.'],
   ['id', 'Profile & KYC', 'Keep your details current and verify your identity online.'],

@@ -4,10 +4,12 @@ import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -16,16 +18,21 @@ public class MailService {
     @Autowired
     private JavaMailSender mailSender;
 
-    @Value("${mail.cc}")
-    private String cc;
+    private static final int SEND_ATTEMPTS = 3;
 
-    @Value("${mail.bcc}")
+    /** Optional hidden archive copy of transactional mails. Never used for OTP mails. */
+    @Value("${mail.bcc:}")
     private String bcc;
 
-    @Value("${spring.mail.username}")
+    /** Sender address. Defaults to the SMTP login; set it when the provider's login is not an email (e.g. SendGrid "apikey"). */
+    @Value("${mail.from:${spring.mail.username}}")
     private String from;
 
+    @Value("${mail.from-name:DIU City Bank}")
+    private String fromName;
 
+    @Value("${mail.reply-to:}")
+    private String replyTo;
 
     public void sendOtpMail(String email, String otp) {
         if (email == null || otp == null) {
@@ -33,29 +40,20 @@ public class MailService {
         }
         log.info("Sending mail to email: {}",maskEmail(email));
 
-        String subject = "Registration OTP - DIU CITY BANK";
+        String subject = "Your DIU City Bank verification code";
 
-        String message = "<html><body>"
-                + "<h2>Registration OTP </h2>"
-
-                + "<p>Dear User,</p>"
-
-                + "<p>Here is your otp to register yourself with DIU city bank.</p>"
-
-                + "<p>Your One-Time Password (OTP) is:</p>"
-                + "<h1 style='color: #2e6c80;'>" + otp + "</h1>"
-
-                + "<p><b>Note:</b> This OTP is valid for <b>10 minutes</b> only.</p>"
-
-                + "<p>If you did not request this, please ignore this email.</p>"
-
-                + "<br/>"
-                + "<p>Best Regards,<br/>"
-                + "<b>DIU CITY BANK</b></p>"
-
+        String message = "<html><body style='font-family:Arial,Helvetica,sans-serif; color:#333333;'>"
+                + "<h2 style='color:#17365d;'>Verify your email</h2>"
+                + "<p>Hello,</p>"
+                + "<p>Use this one-time verification code to continue with DIU City Bank:</p>"
+                + "<h1 style='color:#2e6c80; letter-spacing:4px;'>" + otp + "</h1>"
+                + "<p>This code is valid for <b>" + OtpService.VALIDITY_MINUTES + " minutes</b>. After that it expires and you can request a new one.</p>"
+                + "<p>Never share this code with anyone. Bank staff will never ask for it.</p>"
+                + "<p>If you did not request this code, you can ignore this email.</p>"
+                + "<p>Regards,<br/><b>DIU City Bank</b></p>"
                 + "</body></html>";
 
-        sendMimeMail(email, subject, message);
+        send(email, subject, message, false);
     }
 
     public void sendAccountOpenMail(String email, String name, String accountNumber) {
@@ -277,6 +275,75 @@ public class MailService {
         sendMimeMail(email, subject, message);
     }
 
+    public void sendCardOtpMail(String email, String otp, String maskedCard, int validityMinutes) {
+        log.info("Sending card payment OTP to: {}", maskEmail(email));
+        String message = "<html><body>"
+                + "<h2>Credit card payment OTP</h2>"
+                + "<p>Dear Customer,</p>"
+                + "<p>Use this One-Time Password to confirm the payment on your credit card <b>" + escapeHtml(maskedCard) + "</b>.</p>"
+                + "<h1 style='color: #2e6c80;'>" + otp + "</h1>"
+                + "<p><b>Note:</b> This OTP is valid for <b>" + validityMinutes + " minutes</b> and can be used only once.</p>"
+                + "<p>Never share this OTP with anyone, bank staff will never ask for it. "
+                + "If you did not start this payment, please block your card and contact the bank.</p>"
+                + "<br/><p>Best Regards,<br/><b>DIU CITY BANK</b></p>"
+                + "</body></html>";
+        send(email, "Your DIU City Bank credit card payment code", message, false);
+    }
+
+    /** Confirmation mail for a transaction or account action, with its details as a table. */
+    public void sendNotificationMail(String email, String name, String subject, String headline, java.util.Map<String, String> details) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email address cannot be empty");
+        }
+        log.info("Sending '{}' notification to: {}", subject, maskEmail(email));
+
+        StringBuilder rows = new StringBuilder();
+        details.forEach((label, value) -> rows.append("""
+                <tr>
+                    <td style="padding:8px 0; color:#555555; font-size:14px;">%s</td>
+                    <td style="padding:8px 0; text-align:right; font-weight:bold; color:#17365d; overflow-wrap:anywhere;">%s</td>
+                </tr>
+                """.formatted(escapeHtml(label), escapeHtml(value))));
+
+        String message = """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head><meta charset="UTF-8"><title>%s</title></head>
+            <body style="margin:0; padding:0; background-color:#f4f6f8;
+                         font-family:Arial,Helvetica,sans-serif; color:#333333;">
+                <div style="max-width:600px; margin:30px auto; background:#ffffff;
+                            border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;">
+                    <div style="background:#17365d; padding:25px 30px; text-align:center; color:#ffffff;">
+                        <h1 style="margin:0; font-size:24px;">DIU CITY BANK</h1>
+                        <p style="margin:8px 0 0; font-size:14px;">%s</p>
+                    </div>
+                    <div style="padding:30px; line-height:1.7;">
+                        <p>Dear %s,</p>
+                        <p>%s</p>
+                        <table style="width:100%%; border-collapse:collapse; margin:20px 0;
+                                      border-top:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb;">
+                            %s
+                        </table>
+                        <p style="font-size:14px; color:#555555;">
+                            <strong>Not you?</strong> If you did not perform this action, please
+                            contact the bank immediately and change your password.
+                        </p>
+                        <p style="margin-top:30px;">Thank you for banking with us.<br>
+                            <strong style="color:#17365d;">DIU CITY BANK</strong></p>
+                    </div>
+                    <div style="background:#f4f6f8; padding:15px 25px; text-align:center;
+                                font-size:12px; color:#777777;">
+                        This is an automated notification. Please do not reply directly to this email.
+                    </div>
+                </div>
+            </body>
+            </html>
+            """.formatted(escapeHtml(subject), escapeHtml(subject), escapeHtml(name == null ? "Customer" : name),
+                escapeHtml(headline), rows);
+
+        sendMimeMail(email, subject + " | DIU City Bank", message);
+    }
+
     private String escapeHtml(String value) {
         return value
                 .replace("&", "&amp;")
@@ -286,44 +353,67 @@ public class MailService {
                 .replace("'", "&#39;");
     }
 
-    public void sendMail(String to, String subject, String message){
-
-        try {
-            SimpleMailMessage simpleMailMessage = new SimpleMailMessage();
-
-            simpleMailMessage.setTo(to);
-            simpleMailMessage.setFrom(this.from);
-            simpleMailMessage.setCc(this.cc);
-            simpleMailMessage.setBcc(this.bcc);
-            simpleMailMessage.setSubject(subject);
-            simpleMailMessage.setText(message);
-
-            mailSender.send(simpleMailMessage);
-
-            String mailId = maskEmail(to);
-            log.info("Mail sent successfully to: {}", mailId);
-        }catch (Exception e){
-            log.warn("Exception while sending mail to mail Id: {}",maskEmail(to));
-        }
+    /** Transactional mail with an archive BCC copy when mail.bcc is set. */
+    public void sendMimeMail(String to, String subject, String message) {
+        send(to, subject, message, true);
     }
 
-    public void sendMimeMail(String to, String subject, String message){
-        try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true);
+    /**
+     * Sends one mail as multipart/alternative (plain text + HTML) from a named sender. Mails that are
+     * HTML-only, CC'd to a third address or sent without a sender name are much more likely to land in spam.
+     * Each mail gets a unique X-Entity-Ref-ID so Gmail doesn't fold a new OTP into an older conversation.
+     * Temporary SMTP failures are retried a few times before giving up.
+     */
+    private void send(String to, String subject, String html, boolean archiveCopy) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= SEND_ATTEMPTS; attempt++) {
+            try {
+                MimeMessage mimeMessage = mailSender.createMimeMessage();
+                MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
+                helper.setTo(to);
+                helper.setFrom(this.from, this.fromName);
+                if (replyTo != null && !replyTo.isBlank()) helper.setReplyTo(replyTo);
+                if (archiveCopy && bcc != null && !bcc.isBlank() && !bcc.equalsIgnoreCase(to)) helper.setBcc(bcc);
+                helper.setSubject(subject);
+                helper.setText(toPlainText(html), html);
+                mimeMessage.setHeader("X-Entity-Ref-ID", UUID.randomUUID().toString());
+                mimeMessage.setHeader("Auto-Submitted", "auto-generated");
 
-            helper.setTo(to);
-            helper.setFrom(this.from);
-            helper.setCc(this.cc);
-            helper.setSubject(subject);
-            helper.setText(message, true); // true = HTML
-
-            mailSender.send(mimeMessage);
-            String mailId = maskEmail(to);
-            log.info("Mail sent successfully to: {}", mailId);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to send admission email", e);
+                mailSender.send(mimeMessage);
+                log.info("Mail sent successfully to: {}", maskEmail(to));
+                return;
+            } catch (Exception e) {
+                last = new RuntimeException("Failed to send email to " + maskEmail(to), e);
+                log.warn("Attempt {} to send mail to {} failed: {}", attempt, maskEmail(to), e.getMessage());
+                if (attempt < SEND_ATTEMPTS) {
+                    try {
+                        Thread.sleep(1000L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
         }
+        throw last;
+    }
+
+    /** Readable plain-text version of an HTML mail body. */
+    static String toPlainText(String html) {
+        String text = html
+                .replaceAll("(?is)<(head|style|title)[^>]*>.*?</\\1>", "")
+                .replaceAll("(?i)<br\\s*/?>", "\n")
+                .replaceAll("(?i)</(p|div|h[1-6]|tr|li)>", "\n")
+                .replaceAll("(?i)</td>\\s*<td[^>]*>", ": ")
+                .replaceAll("<[^>]+>", "")
+                .replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
+        StringBuilder out = new StringBuilder();
+        for (String line : text.split("\n")) {
+            String trimmed = line.trim().replaceAll("\\s{2,}", " ");
+            if (!trimmed.isEmpty()) out.append(trimmed).append('\n');
+        }
+        return out.toString().trim();
     }
 
     public String maskEmail(String email) {

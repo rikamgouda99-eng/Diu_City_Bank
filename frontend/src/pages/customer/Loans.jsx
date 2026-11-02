@@ -48,7 +48,7 @@ function Calculator({ rates, onApply }) {
   return (
     <div className="split">
       <form className="panel" onSubmit={submit}>
-        <div className="panel-head"><div><h3><Icon n="chart" />EMI calculator</h3><p className="sub">EMI = P × r × (1 + r)ⁿ / ((1 + r)ⁿ − 1)</p></div></div>
+        <div className="panel-head"><div><h3><Icon n="chart" />EMI calculator</h3><p className="sub">See your monthly EMI before you apply.</p></div></div>
         <div className="form-grid">
           <label>Loan type<select value={v.loanType} onChange={(e) => setV({ ...v, loanType: e.target.value })}>{TYPES.map((t) => <option key={t} value={t}>{words(t)} {rates ? `· ${rates.rates[t]}%` : ''}</option>)}</select></label>
           <label>Loan amount<AmountInput value={v.amount} onChange={(a) => setV({ ...v, amount: a })} min={rates?.minAmount} max={rates?.maxAmount} /></label>

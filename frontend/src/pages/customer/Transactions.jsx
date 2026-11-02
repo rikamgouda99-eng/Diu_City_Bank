@@ -8,31 +8,43 @@ import {
 import { TXN_STATUSES, TXN_TYPES, txnColumns } from '../../components/txn';
 import { useAuth } from '../../context/AuthContext';
 
-const TABS = [['transfer', 'Transfer'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['history', 'History'], ['mini', 'Mini statement']];
+const TABS = [['history', 'History'], ['mini', 'Mini statement']];
 
+function AccountStats({ acc }) {
+  if (!acc.data) return <Notice error={acc.error} />;
+  return (
+    <div className="stats">
+      <Stat icon="wallet" label="Available balance" value={money(acc.data.availableBalance)} />
+      <Stat icon="bank" tone="violet" label="Account" value={maskAcc(acc.data.accountNo)} sub={words(acc.data.accountType)} />
+      <Stat icon="shield" tone={acc.data.status === 'ACTIVE' ? 'good' : 'bad'} label="Status" value={words(acc.data.status)} />
+    </div>);
+}
+
+/** Account activity: history and mini statement. Cash deposits and withdrawals are done by the bank. */
 export default function Transactions() {
   const [params, setParams] = useSearchParams();
-  const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'transfer';
+  const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'history';
   const acc = useApi(() => account.me());
   return (<>
-    <PageHead title="Transactions" sub="Move money and review your account activity."><Sim /></PageHead>
-    {acc.data && (
-      <div className="stats">
-        <Stat icon="wallet" label="Available balance" value={money(acc.data.availableBalance)} />
-        <Stat icon="bank" tone="violet" label="Account" value={maskAcc(acc.data.accountNo)} sub={words(acc.data.accountType)} />
-        <Stat icon="shield" tone={acc.data.status === 'ACTIVE' ? 'good' : 'bad'} label="Status" value={words(acc.data.status)} />
-      </div>)}
-    <Notice error={acc.error} />
+    <PageHead title="Transactions" sub="Review your account activity and download statements."><Sim /></PageHead>
+    <AccountStats acc={acc} />
     <Tabs value={tab} onChange={(t) => setParams({ tab: t })} tabs={TABS} />
-    {tab === 'deposit' && <AmountForm key="d" kind="deposit" account={acc.data} onDone={acc.reload} />}
-    {tab === 'withdraw' && <AmountForm key="w" kind="withdraw" account={acc.data} onDone={acc.reload} />}
-    {tab === 'transfer' && <Transfer account={acc.data} onDone={acc.reload} />}
     {tab === 'history' && <History />}
     {tab === 'mini' && <MiniStatement />}
   </>);
 }
 
-/** Success receipt shared by deposit, withdrawal and transfer. */
+/** Sending money to another DIU City Bank account. */
+export function FundTransfer() {
+  const acc = useApi(() => account.me());
+  return (<>
+    <PageHead title="Fund transfer" sub="Send money to any DIU City Bank account."><Sim /></PageHead>
+    <AccountStats acc={acc} />
+    <Transfer account={acc.data} onDone={acc.reload} />
+  </>);
+}
+
+/** Success receipt for a transfer. */
 function Receipt({ title, amount, status, replayed, from, to, rows, transactionId, onNew }) {
   const dl = useAction();
   const ok = status === 'SUCCESS';
@@ -59,48 +71,6 @@ function Receipt({ title, amount, status, replayed, from, to, rows, transactionI
         {onNew && <button type="button" onClick={onNew}>New transaction</button>}
       </div>
       {dl.error && <div style={{ padding: '0 24px 16px' }}><Notice error={dl.error} /></div>}
-    </div>);
-}
-
-function AmountForm({ kind, account: acc, onDone }) {
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [key, setKey] = useState(newKey);
-  const [result, setResult] = useState(null);
-  const act = useAction();
-  const deposit = kind === 'deposit';
-  const balance = acc?.availableBalance;
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!deposit && balance !== undefined && Number(amount) > Number(balance)) {
-      act.setError(`Amount is more than your available balance of ${money(balance)}.`);
-      return;
-    }
-    const res = await act.run(() => (deposit ? txn.deposit : txn.withdraw)({ amount, description: description || undefined }, key));
-    if (res) { setResult(res.data); setAmount(''); setDescription(''); setKey(newKey()); onDone(); }
-  };
-
-  return (
-    <div className="two">
-      <form className="panel" onSubmit={submit}>
-        <div className="panel-head"><div><h3><Icon n={deposit ? 'deposit' : 'withdraw'} />{deposit ? 'Deposit money' : 'Withdraw money'}</h3>
-          <p className="sub">{deposit ? 'Simulated cash deposit into your savings account.' : 'Simulated cash withdrawal from your available balance.'}</p></div></div>
-        <label>Amount<AmountInput value={amount} onChange={setAmount} max={deposit ? undefined : balance} />
-          {!deposit && balance !== undefined && <span className="hint">Available: {money(balance)}</span>}</label>
-        <label>Description <span className="hint">Optional</span><input maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={deposit ? 'e.g. Salary cash' : 'e.g. Rent'} /></label>
-        <Notice error={act.error} />
-        <button disabled={act.busy}>{act.busy ? 'Processing…' : deposit ? 'Deposit' : 'Withdraw'}</button>
-      </form>
-      {result ? (
-        <Receipt title={deposit ? 'Deposit' : 'Withdrawal'} amount={result.amount} status={result.status} replayed={result.replayed} transactionId={result.transactionId}
-          rows={{ 'Transaction ID': result.transactionId, Reference: result.reference, 'Updated balance': money(result.balanceAfter), RRN: result.rrn, STAN: result.stan, 'Date & time': dateTime(result.createdAt) }}
-          onNew={() => setResult(null)} />
-      ) : (
-        <Panel title="How it works" icon="shield">
-          <p className="muted">Each request carries a unique key, so pressing the button twice or retrying after a network error never {deposit ? 'deposits' : 'withdraws'} twice.
-            Every entry gets a reference, an RRN and a STAN, and appears in your history immediately.</p>
-        </Panel>)}
     </div>);
 }
 
@@ -195,8 +165,9 @@ function Transfer({ account: acc, onDone }) {
         <Panel title="Transfer safety" icon="shield">
           <ul className="muted" style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 8 }}>
             <li>Debit and credit happen together: if anything fails, nothing moves.</li>
-            <li>Only the beneficiary's masked name is shown, never their balance or ID.</li>
+            <li>The beneficiary's name is shown so you can check it, never their balance or ID.</li>
             <li>Double clicks and retries are recognised and never send twice.</li>
+            <li>You and the beneficiary both get a confirmation email.</li>
           </ul>
         </Panel>)}
 

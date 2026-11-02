@@ -4,6 +4,7 @@ import com.dcb.entity.KycRequestEntity;
 import com.dcb.enums.KycDocumentType;
 import com.dcb.model.APIResponse;
 import com.dcb.service.KycService;
+import com.dcb.service.NotificationService;
 import com.dcb.util.Util;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
@@ -18,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class KycController {
 
     private final KycService kycService;
+    private final NotificationService notifier;
     private final Util util;
 
     @GetMapping
@@ -30,8 +32,11 @@ public class KycController {
                                                  @RequestParam KycDocumentType documentType,
                                                  @RequestParam String documentNumber,
                                                  @RequestParam("file") MultipartFile file) {
+        var response = kycService.submit(user.getUsername(), documentType, documentNumber, file);
+        notifier.notify(user.getUsername(), "KYC submitted", "We received your KYC document. The bank will review it shortly.",
+                NotificationService.details().add("Document", response.getDocumentType()).add("Status", response.getStatus()));
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(util.getSuccessResponse(kycService.submit(user.getUsername(), documentType, documentNumber, file), "KYC submitted for review."));
+                .body(util.getSuccessResponse(response, "KYC submitted for review."));
     }
 
     @GetMapping("/{id}/document")

@@ -8,6 +8,7 @@ import com.dcb.model.*;
 import com.dcb.service.CardService;
 import com.dcb.service.FixedDepositService;
 import com.dcb.service.LoanService;
+import com.dcb.service.NotificationService;
 import com.dcb.util.Util;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class AdminProductController {
     private final FixedDepositService fdService;
     private final CardService cardService;
     private final LoanService loanService;
+    private final NotificationService notifier;
     private final Util util;
 
     // ---------------------------------------------------------------- fixed deposits
@@ -43,12 +45,12 @@ public class AdminProductController {
 
     @PutMapping("/fd/{fdId}/approve")
     public ResponseEntity<APIResponse<?>> approveFd(@PathVariable String fdId, @RequestBody(required = false) @Valid FdApprovalRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(fdService.approve(fdId, request), "FD approved."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyFd(fdService.approve(fdId, request)), "FD approved."));
     }
 
     @PutMapping("/fd/{fdId}/reject")
     public ResponseEntity<APIResponse<?>> rejectFd(@PathVariable String fdId, @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(fdService.reject(fdId, request), "FD rejected and principal refunded."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyFd(fdService.reject(fdId, request)), "FD rejected and principal refunded."));
     }
 
     @PostMapping("/fd/process-maturity")
@@ -74,27 +76,27 @@ public class AdminProductController {
 
     @PutMapping("/cards/{cardId}/approve")
     public ResponseEntity<APIResponse<?>> approveCard(@PathVariable Long cardId, @RequestBody(required = false) @Valid CardApprovalRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(cardService.approve(cardId, request == null ? new CardApprovalRequest() : request), "Card approved and issued."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyCard(cardService.approve(cardId, request == null ? new CardApprovalRequest() : request), "Card issued"), "Card approved and issued."));
     }
 
     @PutMapping("/cards/{cardId}/reject")
     public ResponseEntity<APIResponse<?>> rejectCard(@PathVariable Long cardId, @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(cardService.reject(cardId, request), "Card application rejected."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyCard(cardService.reject(cardId, request), "Card application rejected"), "Card application rejected."));
     }
 
     @PutMapping("/cards/{cardId}/block")
     public ResponseEntity<APIResponse<?>> blockCard(@PathVariable Long cardId) {
-        return ResponseEntity.ok(util.getSuccessResponse(cardService.adminBlock(cardId), "Card blocked."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyCard(cardService.adminBlock(cardId), "Card blocked by the bank"), "Card blocked."));
     }
 
     @PutMapping("/cards/{cardId}/unblock")
     public ResponseEntity<APIResponse<?>> unblockCard(@PathVariable Long cardId) {
-        return ResponseEntity.ok(util.getSuccessResponse(cardService.adminUnblock(cardId), "Card unblocked."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyCard(cardService.adminUnblock(cardId), "Card unblocked by the bank"), "Card unblocked."));
     }
 
     @PutMapping("/cards/{cardId}/limit")
     public ResponseEntity<APIResponse<?>> cardLimit(@PathVariable Long cardId, @RequestBody @Valid CardLimitUpdateRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(cardService.updateLimit(cardId, request), "Card limit updated."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyCard(cardService.updateLimit(cardId, request), "Card limit updated"), "Card limit updated."));
     }
 
     @GetMapping("/cards/{cardId}/transactions")
@@ -136,11 +138,35 @@ public class AdminProductController {
 
     @PutMapping("/loans/{loanId}/approve")
     public ResponseEntity<APIResponse<?>> approveLoan(@PathVariable String loanId, @RequestBody(required = false) @Valid LoanApprovalRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(loanService.approve(loanId, request), "Loan approved and disbursed (simulated)."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyLoan(loanService.approve(loanId, request)), "Loan approved and disbursed (simulated)."));
     }
 
     @PutMapping("/loans/{loanId}/reject")
     public ResponseEntity<APIResponse<?>> rejectLoan(@PathVariable String loanId, @RequestBody(required = false) @Valid DecisionRequest request) {
-        return ResponseEntity.ok(util.getSuccessResponse(loanService.reject(loanId, request), "Loan rejected."));
+        return ResponseEntity.ok(util.getSuccessResponse(notifyLoan(loanService.reject(loanId, request)), "Loan rejected."));
+    }
+
+    // ---------------------------------------------------------------- confirmation mails
+
+    private FdResponse notifyFd(FdResponse fd) {
+        notifier.notify(fd.getBankId(), "Fixed deposit " + fd.getStatus().toLowerCase(), "The bank has reviewed your fixed deposit.",
+                NotificationService.details().add("FD number", fd.getFdId()).amount("Principal", fd.getPrincipal())
+                        .add("Status", fd.getStatus()).add("Maturity date", fd.getMaturityDate()).add("Bank comment", fd.getAdminComment()));
+        return fd;
+    }
+
+    private CardResponse notifyCard(CardResponse card, String subject) {
+        notifier.notify(card.getBankId(), subject, "There is an update on your " + card.getCardType().toLowerCase() + " card.",
+                NotificationService.details().add("Card", card.getCardScheme() + " " + (card.getMaskedNumber() == null ? "application" : card.getMaskedNumber()))
+                        .add("Status", card.getStatus()).amount("Card limit", card.getCardLimit()).add("Bank comment", card.getAdminComment()));
+        return card;
+    }
+
+    private LoanResponse notifyLoan(LoanResponse loan) {
+        notifier.notify(loan.getBankId(), "Loan " + loan.getStatus().toLowerCase(), "The bank has decided on your loan application.",
+                NotificationService.details().add("Loan ID", loan.getLoanId()).add("Loan type", loan.getLoanType()).add("Status", loan.getStatus())
+                        .amount("Approved amount", loan.getApprovedAmount()).amount("Monthly EMI", loan.getMonthlyEmi())
+                        .add("Bank comment", loan.getAdminComment()));
+        return loan;
     }
 }

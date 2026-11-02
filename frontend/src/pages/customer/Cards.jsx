@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cards } from '../../api/services';
 import { newKey } from '../../api/client';
 import { Badge, Details, Dialog, EmptyState, Icon, Loading, Notice, PageHead, Pager, Panel, Sim, Table, money, date, dateTime, words, useAction, useApi } from '../../components/ui';
 
-/** Simulated card face. Only the masked number is ever available. */
-export function BankCard({ card, selected, onClick }) {
+/** Simulated card face. Shows the masked number unless the owner chose to reveal the full one. */
+export function BankCard({ card, selected, onClick, fullNumber }) {
   const issued = !!card.maskedNumber;
   return (
     <button type="button" className={`bankcard ${card.cardType.toLowerCase()} ${selected ? 'sel' : ''} ${['BLOCKED', 'REJECTED', 'REPLACED'].includes(card.status) ? 'muted-card' : ''}`}
       onClick={onClick} aria-label={`${card.cardScheme} ${card.cardType} card ${card.maskedNumber || 'application'}`}>
       <div className="top"><b>DIU City Bank<small>{card.cardType === 'DEBIT' ? 'Debit' : 'Credit'} · Simulation</small></b><span className="scheme">{card.cardScheme === 'MASTERCARD' ? 'mastercard' : card.cardScheme}</span></div>
       <div className="row"><span className="chip" />{card.status !== 'ACTIVE' && <Badge v={card.status} />}</div>
-      <div className="pan">{issued ? card.maskedNumber.replace(/X/g, '•') : 'Application in review'}</div>
+      <div className="pan">{!issued ? 'Application in review' : fullNumber || card.maskedNumber.replace(/X/g, '•')}</div>
       <div className="bottom">
         <div><span>Card holder</span><b>{card.holderName}</b></div>
         <div style={{ textAlign: 'right' }}><span>Valid thru</span><b>{card.expiry || '—/—'}</b></div>
@@ -19,8 +19,26 @@ export function BankCard({ card, selected, onClick }) {
     </button>);
 }
 
+/** Full card numbers the owner chose to show; each hides itself again after a minute. */
+function useCardNumbers() {
+  const [shown, setShown] = useState({});
+  const act = useAction();
+  const timers = useRef({});
+  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
+  const hide = (id) => { clearTimeout(timers.current[id]); setShown((s) => { const n = { ...s }; delete n[id]; return n; }); };
+  const show = async (id) => {
+    const res = await act.run(() => cards.number(id), { quiet: true });
+    if (!res) return;
+    setShown((s) => ({ ...s, [id]: res.data.cardNumber }));
+    clearTimeout(timers.current[id]);
+    timers.current[id] = setTimeout(() => hide(id), 60000);
+  };
+  return { shown, show, hide, busy: act.busy, error: act.error, clear: act.clear };
+}
+
 export default function Cards() {
   const list = useApi(() => cards.list());
+  const numbers = useCardNumbers();
   const [selectedId, setSelectedId] = useState(null);
   const all = list.data || [];
   const selected = all.find((c) => c.cardId === selectedId);
@@ -31,7 +49,7 @@ export default function Cards() {
     return (
       <div className="card-section">
         <div className="row" style={{ marginBottom: 12 }}><h4 style={{ margin: 0 }}>{title}</h4><span className="muted small">{rows.length} card{rows.length === 1 ? '' : 's'}</span></div>
-        {rows.length ? <div className="cards">{rows.map((c) => <BankCard key={c.cardId} card={c} selected={c.cardId === selectedId} onClick={() => setSelectedId(c.cardId)} />)}</div>
+        {rows.length ? <div className="cards">{rows.map((c) => <BankCard key={c.cardId} card={c} fullNumber={numbers.shown[c.cardId]} selected={c.cardId === selectedId} onClick={() => setSelectedId(c.cardId)} />)}</div>
           : <EmptyState icon="card" title={`No ${title.toLowerCase()} yet`} text="Apply using the form on this page." />}
       </div>);
   };
@@ -44,7 +62,7 @@ export default function Cards() {
       </Panel>
       <Apply onDone={list.reload} existing={all} />
     </div>
-    {selected && <CardDetail card={selected} onChange={list.reload} />}
+    {selected && <CardDetail card={selected} onChange={list.reload} numbers={numbers} />}
   </>);
 }
 
@@ -73,7 +91,7 @@ function Apply({ onDone, existing }) {
     </form>);
 }
 
-function CardDetail({ card, onChange }) {
+function CardDetail({ card, onChange, numbers }) {
   const [dialog, setDialog] = useState(null);
   const [page, setPage] = useState(0);
   const issued = !!card.issuedDate;
@@ -85,6 +103,15 @@ function CardDetail({ card, onChange }) {
   const limit = Number(card.cardLimit) || 0;
   const pct = limit ? Math.min(100, (used / limit) * 100) : 0;
   const pinField = (name, label) => ({ name, label, type: 'password', required: true, pattern: '\\d{4}', maxLength: 4, inputMode: 'numeric', placeholder: '••••' });
+  const otpField = { name: 'otp', label: 'Email OTP', required: true, pattern: '\\d{6}', maxLength: 6, inputMode: 'numeric', placeholder: '6 digit OTP' };
+  const fullNumber = numbers.shown[card.cardId];
+  useEffect(() => numbers.clear(), [card.cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // credit card payments are confirmed with the PIN and an OTP mailed to the customer
+  const withOtp = async (open) => {
+    if (!credit) { open(''); return; }
+    if (await act.run(() => cards.sendOtp(card.cardId))) open(' A 6 digit OTP has been sent to your registered email.');
+  };
 
   const pinDialog = () => setDialog({
     title: card.pinSet ? 'Change card PIN' : 'Set card PIN', text: 'Your PIN is stored encrypted and is never shown again.',
@@ -92,24 +119,25 @@ function CardDetail({ card, onChange }) {
     confirm: card.pinSet ? 'Change PIN' : 'Set PIN',
     onSubmit: (v) => { if (v.newPin !== v.confirm) throw new Error('PINs do not match.'); return cards.pin(card.cardId, { oldPin: v.oldPin || undefined, newPin: v.newPin }); },
   });
-  const simulateDialog = () => {
+  const simulateDialog = () => withOtp((otpText) => {
     const key = newKey();
     setDialog({
       title: `Simulate a ${card.cardType.toLowerCase()} card purchase`,
-      text: credit ? `Available credit: ${money(card.availableCredit)}` : `Available today: ${money(card.availableToday)}`,
+      text: (credit ? `Available credit: ${money(card.availableCredit)}.` : `Available today: ${money(card.availableToday)}`) + otpText,
       fields: [{ name: 'merchantName', label: 'Merchant', required: true, maxLength: 100, placeholder: 'e.g. Diu Fort Cafe' },
-        { name: 'amount', label: 'Amount (₹)', type: 'number', step: '0.01', min: '0.01', required: true }, pinField('pin', 'Card PIN')],
+        { name: 'amount', label: 'Amount (₹)', type: 'number', step: '0.01', min: '0.01', required: true }, pinField('pin', 'Card PIN'), ...(credit ? [otpField] : [])],
       confirm: 'Authorise payment', onSubmit: (v) => cards.simulate(card.cardId, v, key),
     });
-  };
-  const duesDialog = () => {
+  });
+  const duesDialog = () => withOtp((otpText) => {
     const key = newKey();
     setDialog({
-      title: 'Pay credit card dues', text: `Outstanding ${money(card.creditUsed)} · minimum due ${money(card.billing?.minimumDue)}. Paid from your savings account.`,
-      fields: [{ name: 'amount', label: 'Amount (₹)', type: 'number', step: '0.01', min: '0.01', required: true, value: card.billing?.minimumDue || '' }],
+      title: 'Pay credit card dues', text: `Outstanding ${money(card.creditUsed)} · minimum due ${money(card.billing?.minimumDue)}. Paid from your savings account.${otpText}`,
+      fields: [{ name: 'amount', label: 'Amount (₹)', type: 'number', step: '0.01', min: '0.01', required: true, value: card.billing?.minimumDue || '' },
+        pinField('pin', 'Card PIN'), otpField],
       confirm: 'Pay dues', onSubmit: (v) => cards.payDues(card.cardId, v, key),
     });
-  };
+  });
   const confirmDialog = (title, text, fn, danger, confirm) => setDialog({ title, text, danger, confirm, onSubmit: fn });
 
   return (<>
@@ -121,19 +149,26 @@ function CardDetail({ card, onChange }) {
           <div className="info-grid">
             <div><span>{credit ? 'Credit limit' : 'Daily limit'}</span><b className="num">{money(card.cardLimit)}</b></div>
             <div><span>{credit ? 'Available credit' : 'Available today'}</span><b className="num cr">{money(credit ? card.availableCredit : card.availableToday)}</b></div>
-            <div><span>Card number</span><b className="num">{card.maskedNumber}</b></div>
+            <div><span>Card number</span>
+              <b className="num row gap" style={{ justifyContent: 'flex-start' }}>{fullNumber || card.maskedNumber}
+                <button type="button" className="icon-btn" disabled={numbers.busy} aria-label={fullNumber ? 'Hide card number' : 'Show card number'} title={fullNumber ? 'Hide card number' : 'Show card number'}
+                  onClick={() => (fullNumber ? numbers.hide(card.cardId) : numbers.show(card.cardId))}><Icon n={fullNumber ? 'eyeoff' : 'eye'} size={16} /></button></b></div>
             <div><span>Valid thru</span><b>{card.expiry}</b></div>
             <div><span>Linked account</span><b className="num">{card.linkedAccount}</b></div>
             <div><span>PIN</span><b>{card.pinSet ? 'Set' : 'Not set'}</b></div>
           </div>
+          <Notice error={numbers.error} />
           {card.billing && (<><h4>Billing</h4>
-            <Details data={card.billing} fields={[['totalOutstanding', 'Total outstanding', money], ['minimumDue', 'Minimum due', money], ['statementDate', 'Statement date', date], ['paymentDueDate', 'Payment due', date]]} /></>)}
+            <Details data={card.billing} fields={[['totalOutstanding', 'Total outstanding', money], ['minimumDue', 'Minimum due', money], ['statementDate', 'Statement date', date],
+              ['paymentDueDate', 'Payment due date', (d) => <>{date(d)}{card.billing.daysToDue >= 0 && Number(card.billing.totalOutstanding) > 0 && <span className="muted small"> · {card.billing.daysToDue === 0 ? 'due today' : `in ${card.billing.daysToDue} day${card.billing.daysToDue === 1 ? '' : 's'}`}</span>}</>],
+              ['nextStatementDate', 'Next statement', date]]} />
+            <p className="hint"><Icon n="clock" size={13} /> We email you when the statement is generated, 3 days before the due date and on the due date.</p></>)}
         </>) : (
           <div className="stack">
             <Details data={card} fields={[['status', 'Application status', (x) => <Badge v={x} />], ['appliedAt', 'Applied on', dateTime], ['requestedLimit', 'Requested limit', money], ['adminComment', 'Bank comment']]} />
             <p className="muted">{card.status === 'APPLIED' ? 'Your application is with the bank. You will be able to use the card once it is issued.' : 'This application was not approved.'}</p>
           </div>)}
-        <p className="hint"><Icon n="shield" size={13} /> The full card number, CVV and PIN are never stored or shown.</p>
+        <p className="hint"><Icon n="shield" size={13} /> The card number is stored encrypted and hides again after a minute. CVV and PIN are never shown.</p>
       </Panel>
       <Panel title="Card controls" icon="settings">
         {issued ? (

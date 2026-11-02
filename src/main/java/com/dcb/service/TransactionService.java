@@ -51,12 +51,13 @@ public class TransactionService {
                                 LocalDate from, LocalDate to) {
     }
 
-    public TransactionResponse deposit(String bankId, AmountRequest request, String idempotencyKey) {
+    /** Cash deposit into a customer's account, done by an admin at the branch. */
+    public TransactionResponse deposit(String adminId, String accountNo, AmountRequest request, String idempotencyKey) {
         validateAmount(request.getAmount());
         idempotencyService.validateKey(idempotencyKey);
         return executor.run(() -> {
-            BankAccountEntity account = accountService.lockOperableAccount(bankId);
-            var prior = idempotencyService.findResult(bankId, idempotencyKey, "DEPOSIT");
+            BankAccountEntity account = lockCustomerAccount(accountNo);
+            var prior = idempotencyService.findResult(adminId, idempotencyKey, "DEPOSIT");
             if (prior.isPresent()) return replay(prior.get());
 
             String reference = Util.generateReference("DEP");
@@ -64,21 +65,23 @@ public class TransactionService {
                     .type(TransactionType.DEPOSIT)
                     .amount(request.getAmount())
                     .reference(reference)
-                    .description(describe(request.getDescription(), "Cash deposit (simulated)"))
-                    .toBankId(bankId)
-                    .channel("ONLINE_SIM")
+                    .description(describe(request.getDescription(), "Cash deposit at branch"))
+                    .toBankId(account.getCustomerId())
+                    .channel("BRANCH")
                     .build());
-            idempotencyService.remember(bankId, idempotencyKey, "DEPOSIT", entry.getTransactionId());
+            idempotencyService.remember(adminId, idempotencyKey, "DEPOSIT", entry.getTransactionId());
+            log.info("Admin {} deposited {} into {}", adminId, request.getAmount(), Util.maskAccount(accountNo));
             return LedgerService.toResponse(entry);
         });
     }
 
-    public TransactionResponse withdraw(String bankId, AmountRequest request, String idempotencyKey) {
+    /** Cash withdrawal from a customer's account, done by an admin at the branch. */
+    public TransactionResponse withdraw(String adminId, String accountNo, AmountRequest request, String idempotencyKey) {
         validateAmount(request.getAmount());
         idempotencyService.validateKey(idempotencyKey);
         return executor.run(() -> {
-            BankAccountEntity account = accountService.lockOperableAccount(bankId);
-            var prior = idempotencyService.findResult(bankId, idempotencyKey, "WITHDRAWAL");
+            BankAccountEntity account = lockCustomerAccount(accountNo);
+            var prior = idempotencyService.findResult(adminId, idempotencyKey, "WITHDRAWAL");
             if (prior.isPresent()) return replay(prior.get());
 
             String reference = Util.generateReference("WDL");
@@ -86,13 +89,29 @@ public class TransactionService {
                     .type(TransactionType.WITHDRAWAL)
                     .amount(request.getAmount())
                     .reference(reference)
-                    .description(describe(request.getDescription(), "Cash withdrawal (simulated)"))
-                    .fromBankId(bankId)
-                    .channel("ONLINE_SIM")
+                    .description(describe(request.getDescription(), "Cash withdrawal at branch"))
+                    .fromBankId(account.getCustomerId())
+                    .channel("BRANCH")
                     .build());
-            idempotencyService.remember(bankId, idempotencyKey, "WITHDRAWAL", entry.getTransactionId());
+            idempotencyService.remember(adminId, idempotencyKey, "WITHDRAWAL", entry.getTransactionId());
+            log.info("Admin {} withdrew {} from {}", adminId, request.getAmount(), Util.maskAccount(accountNo));
             return LedgerService.toResponse(entry);
         });
+    }
+
+    /** Owner's bank ID for an account, used to address confirmation mails. */
+    public String ownerOf(String accountNo) {
+        return accountRepo.findById(accountNo).map(BankAccountEntity::getCustomerId).orElse(null);
+    }
+
+    private BankAccountEntity lockCustomerAccount(String accountNo) {
+        BankAccountEntity account = accountService.lockAccount(accountNo);
+        UserEntity holder = userRepo.findById(account.getCustomerId()).orElse(null);
+        if (holder == null || !Boolean.TRUE.equals(holder.getIsActive())) {
+            throw new BankException("The account holder's profile is deactivated.");
+        }
+        accountService.assertActive(account, "This account");
+        return account;
     }
 
     public BeneficiaryResponse lookupBeneficiary(String bankId, String accountNo) {
@@ -105,7 +124,7 @@ public class TransactionService {
         UserEntity holder = userRepo.findById(beneficiary.getCustomerId()).orElse(null);
         return BeneficiaryResponse.builder()
                 .accountNo(beneficiary.getAccountNo())
-                .holderName(Util.maskName(holder == null ? "Account holder" : Util.fullName(holder)))
+                .holderName(holder == null ? "Account holder" : Util.fullName(holder))
                 .bankName(BANK_NAME)
                 .status(isReceivable(beneficiary, holder) ? "ACTIVE" : "INACTIVE")
                 .build();
@@ -261,7 +280,7 @@ public class TransactionService {
                 .amount(t.getAmount())
                 .fromAccount(t.getSenderAccount())
                 .toAccount(Util.maskAccount(t.getReceiverAccount()))
-                .beneficiaryName(Util.maskName(receiver == null ? "Account holder" : Util.fullName(receiver)))
+                .beneficiaryName(receiver == null ? "Account holder" : Util.fullName(receiver))
                 .remarks(t.getRemarks())
                 .debitTransactionId(t.getDebitTransactionId())
                 .balanceAfter(balanceAfter)

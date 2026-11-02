@@ -22,4 +22,8 @@ public class CardSimulationRequest {
     @NotBlank(message = "Card PIN is mandatory.")
     @Pattern(regexp = "\\d{4}", message = "Card PIN must be 4 digits.")
     private String pin;
+
+    /** Required for credit cards: the 6 digit OTP mailed to the card owner. */
+    @Pattern(regexp = "\\d{6}", message = "OTP must be 6 digits.")
+    private String otp;
 }

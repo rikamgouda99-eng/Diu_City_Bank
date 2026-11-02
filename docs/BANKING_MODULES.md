@@ -58,7 +58,7 @@ npm run dev                     # http://localhost:5173
 | Statuses | `INITIATED, PENDING, SUCCESS, FAILED, REVERSED`. Each entry has a 12-digit RRN and a 6-digit STAN |
 
 ### 2.2 Bill payments
-Bill types: electricity, water, mobile recharge, internet, gas, DTH, other. Payment modes: **UPI, bank draft** (debit the account), **debit card** (debits the account through the card; counts toward its daily limit; PIN required), and **credit card** (uses the credit line; PIN required). Each `bill_payment` row links to its ledger transaction or card transaction.
+Bill types: electricity, water, mobile recharge, internet, gas, DTH, other. Each type has its own fields and provider list from `GET /bills/options` (mobile recharge: 10 digit mobile number + network provider such as Jio, Airtel, Vi, BSNL). Payment modes: **bank draft** (debits the account), **debit card** (debits the account through the card; counts toward its daily limit; PIN required), and **credit card** (uses the credit line; PIN and email OTP required). UPI is no longer offered. Each `bill_payment` row links to its ledger transaction or card transaction.
 
 ### 2.3 Profile, photo and KYC
 - View every profile field, including KYC and verification status. Users can edit name, mobile, address, gender and marital status. Bank ID, role, balance and approval flags can't be changed: extra fields in the request are ignored.
@@ -129,8 +129,10 @@ Base path `/api/v1`. Every JSON response uses the existing envelope `{ isSuccess
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/accounts/me` | account overview and balance |
-| POST | `/transactions/deposit` | Idem · `{amount, description?}` |
-| POST | `/transactions/withdraw` | Idem · `{amount, description?}` |
+| POST | `/admin/accounts/{accountNo}/deposit` | Admin only · Idem · `{amount, description?}` |
+| POST | `/admin/accounts/{accountNo}/withdraw` | Admin only · Idem · `{amount, description?}` |
+| GET | `/cards/{id}/number` | Full card number for the show/hide option |
+| POST | `/cards/{id}/otp` | Mails a 6 digit OTP that confirms the next credit card payment |
 | GET | `/transactions/beneficiary?accountNo=` | masked beneficiary |
 | POST | `/transactions/transfer` | Idem · `{beneficiaryAccountNo, amount, remarks?}` |
 | GET | `/transactions/history` | `reference, type, status, from, to, page, size` |
@@ -202,7 +204,7 @@ All rules live in `application.properties` under `bank.*`: transaction min/max, 
 | TransactionApiTest (9) | deposit, withdraw, insufficient balance + FAILED record, invalid amounts, missing idempotency key, transfer with both ledger legs, same/unknown account, **duplicate transfer replayed**, **rollback** on insufficient funds and on frozen receiver, history filters/pagination, mini statement, PDF receipt/statement, other customers' data → 404 |
 | ProfileKycApiTest (7) | get/update profile (protected fields untouched), photo upload/get/replace/delete, invalid format, >2 MB, unauthenticated, password change, email change OTP, KYC submit/duplicate/reject-needs-reason/approve |
 | FixedDepositApiTest (6) | quote, validation, create/approve/premature close, insufficient balance, reject refunds + REVERSED, **maturity paid exactly once**, cross-customer access |
-| CardBillApiTest (4) | debit lifecycle, PIN rules, wrong PIN, daily limit exceeded, block/unblock, bank block, credit card uses credit line, pay dues, reject, replacement, bills by UPI and credit card, bill over balance |
+| CardBillApiTest (4) | debit lifecycle, PIN rules, wrong PIN, daily limit exceeded, block/unblock, bank block, credit card uses credit line, pay dues, reject, replacement, bills by bank draft and credit card (OTP), UPI rejected, mobile recharge validation, card number reveal, billing dates, bill over balance |
 | LoanApiTest (3) | EMI calculator, apply/approve/disburse/schedule/pay EMI, **duplicate EMI blocked**, insufficient balance, reject |
 | SecurityAdminApiTest (6) | customer → admin 403, admin → customer banking 403, anonymous 401, admin dashboard/customers/transactions, no password hash in approvals, account closure flow, login returns role |
 | DiuCityBankApplicationTests (1) | existing context-load test |

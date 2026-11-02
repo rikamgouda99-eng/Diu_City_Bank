@@ -12,8 +12,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Simulated debit/credit card. The full card number and CVV are never stored:
- * only the masked number, a random token and a BCrypt hash of the CVV and PIN.
+ * Simulated debit/credit card. The CVV and PIN are only stored as BCrypt hashes and the
+ * full card number only in encrypted form, so the owner can reveal it on demand.
  */
 @Entity
 @Getter
@@ -73,6 +73,10 @@ public class CardEntity {
 
     @Column(name = "cvv_hash")
     private String cvvHash;
+
+    /** Full card number, AES-GCM encrypted. Only decrypted when the owner asks to see it. */
+    @Column(name = "pan_encrypted", length = 120)
+    private String panEncrypted;
 
     /** Debit: daily spend limit. Credit: total credit limit. */
     @Column(name = "card_limit", precision = 19, scale = 2)

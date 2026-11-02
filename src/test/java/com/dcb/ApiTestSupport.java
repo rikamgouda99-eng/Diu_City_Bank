@@ -1,9 +1,11 @@
 package com.dcb;
 
 import com.dcb.entity.BankAccountEntity;
+import com.dcb.entity.CardOtpEntity;
 import com.dcb.entity.UserEntity;
 import com.dcb.enums.AccountStatus;
 import com.dcb.repository.BankAccountRepo;
+import com.dcb.repository.CardOtpRepo;
 import com.dcb.repository.UserRepo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,6 +49,11 @@ abstract class ApiTestSupport {
 
     @Autowired
     PasswordEncoder encoder;
+
+    @Autowired
+    CardOtpRepo cardOtpRepo;
+
+    private String teller;
 
     record Res(int status, JsonNode body, byte[] raw, String contentType) {
         JsonNode data() {
@@ -118,6 +125,23 @@ abstract class ApiTestSupport {
         Res res = post("/api/v1/public/login", null, Map.of("bankId", bankId, "password", PASSWORD), null);
         assertEquals(200, res.status(), res.message());
         return res.data().path("accessToken").asText();
+    }
+
+    /** Cash deposit/withdrawal are admin-only, so tests post them through a shared admin. */
+    Res cash(String kind, Customer c, String amount) {
+        if (teller == null) teller = admin();
+        return post("/api/v1/admin/accounts/" + c.accountNo() + "/" + kind, teller, Map.of("amount", amount), key());
+    }
+
+    /** Requests a credit card payment OTP and swaps the mailed value for a known one. */
+    String cardOtp(Customer c, long cardId) {
+        cardOtpRepo.deleteById(cardId);
+        Res sent = post("/api/v1/cards/" + cardId + "/otp", c.token(), null, null);
+        assertEquals(200, sent.status(), sent.message());
+        CardOtpEntity otp = cardOtpRepo.findById(cardId).orElseThrow();
+        otp.setOtpHash(encoder.encode("246810"));
+        cardOtpRepo.save(otp);
+        return "246810";
     }
 
     BigDecimal balance(String accountNo) {

@@ -30,6 +30,9 @@ public class OtpService {
     MailService mailService;
 
 
+    /** Sign-up, password reset and email change OTPs expire after this many minutes. */
+    public static final int VALIDITY_MINUTES = 5;
+
     private static final Logger logger = LoggerFactory.getLogger(OtpService.class);
 
     ExecutorService executorService = Executors.newFixedThreadPool(10);
@@ -48,7 +51,7 @@ public class OtpService {
         OtpEntity otpEntity = new OtpEntity();
         otpEntity.setMailId(mailId);
         otpEntity.setOtp(encodedOtp);
-        otpEntity.setExpiry(LocalDateTime.now().plusMinutes(10));
+        otpEntity.setExpiry(LocalDateTime.now().plusMinutes(VALIDITY_MINUTES));
         otpRepo.save(otpEntity);
         executorService.submit(()->mailService.sendOtpMail(mailId,String.valueOf(random)));
         logger.info("{} OTP sent successfully.",mailId);

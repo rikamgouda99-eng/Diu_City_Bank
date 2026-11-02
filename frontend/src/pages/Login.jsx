@@ -12,7 +12,8 @@ const TITLES = {
   verify: 'Verify your email',
 };
 
-const OTP_MS = 10 * 60 * 1000;
+// matches OtpService.VALIDITY_MINUTES on the backend
+const OTP_MS = 5 * 60 * 1000;
 
 const mmss = (s) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(
@@ -32,6 +33,13 @@ export default function Login() {
 
   const { login, user } = useAuth();
   const nav = useNavigate();
+  // the OTP stops working once its 5 minutes are up; only then can a new one be requested
+  const otpExpired = mode === 'verify' && until > 0 && left === 0 && Date.now() >= until;
+
+  const startSession = (d) => {
+    login({ token: d.accessToken, refreshToken: d.refreshToken, role: d.role, name: d.name || d.bankId, bankId: d.bankId });
+    nav(d.role === 'ADMIN' ? '/admin' : '/app');
+  };
 
   useEffect(() => {
     if (!until) return;
@@ -85,24 +93,26 @@ export default function Login() {
 
         go(
           'verify',
-          `We sent a verification code to ${v.email}.`
+          `We sent a verification code to ${v.email}. It is valid for 5 minutes.`
         );
       } else if (mode === 'verify') {
+        if (otpExpired) {
+          throw new Error('This OTP has expired. Please resend a new OTP.');
+        }
         await auth.verifyOtp({
           mailId: v.email,
           otp: v.otp,
         });
 
         setUntil(0);
-        setV((prev) => ({
-          email: prev.email,
-          password: '',
-        }));
-
-        go(
-          'login',
-          'Email verified. Try logging in with your account.'
-        );
+        // the password was already chosen on the registration form, so sign in with it directly
+        try {
+          const res = await auth.login({ bankId: '', mailId: v.email, password: v.password });
+          startSession(res.data);
+        } catch {
+          setV((prev) => ({ email: prev.email, password: '' }));
+          go('login', 'Email verified. Please log in with the password you chose.');
+        }
       } else if (mode === 'forgot') {
         await auth.forgot(v.email.trim());
         // the reset step verifies by email, so ask for it if a Bank ID was used
@@ -140,8 +150,7 @@ export default function Login() {
         if ((d.role === 'ADMIN') !== admin) {
           throw new Error(admin ? 'This is not an admin account. Use the Customer tab.' : 'Admins must log in from the Admin tab.');
         }
-        login({ token: d.accessToken, refreshToken: d.refreshToken, role: d.role, name: d.name || d.bankId, bankId: d.bankId });
-        nav(d.role === 'ADMIN' ? '/admin' : '/app');
+        startSession(d);
       }
     } catch (error) {
       setMsg({
@@ -162,7 +171,7 @@ export default function Login() {
 
       setUntil(Date.now() + OTP_MS);
       setV((prev) => ({ ...prev, otp: '' }));
-      setMsg({ text: 'A new OTP request was sent.', ok: true });
+      setMsg({ text: `A new OTP was sent to ${v.email}. It is valid for 5 minutes.`, ok: true });
     } catch (error) {
       setMsg({
         text: error.message || 'Could not resend OTP.',
@@ -413,16 +422,16 @@ export default function Login() {
               </label>
 
               <div className="row">
-                <span className="muted">
-                  {left > 0
-                    ? `Resend OTP available in ${mmss(left)}`
-                    : 'Did not get the OTP?'}
+                <span className={otpExpired ? 'msg' : 'muted'} role={otpExpired ? 'alert' : undefined}>
+                  {otpExpired
+                    ? 'Your OTP has expired. Please resend a new OTP.'
+                    : `OTP valid for ${mmss(left)}. You can resend it after it expires.`}
                 </span>
 
                 <button
                   type="button"
                   className="link"
-                  disabled={left > 0 || busy}
+                  disabled={!otpExpired || busy}
                   onClick={resend}
                 >
                   Resend OTP
@@ -466,7 +475,7 @@ export default function Login() {
             </div>
           )}
 
-          <button type="submit" disabled={busy}>
+          <button type="submit" disabled={busy || otpExpired}>
             {busy
               ? 'Please wait…'
               : {

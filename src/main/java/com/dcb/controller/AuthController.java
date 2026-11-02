@@ -34,7 +34,7 @@ public class AuthController {
             @RequestBody @Valid SignupRequest signupRequest
             ){
         SignupResponse response = authService.doSignUp(signupRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(utility.getSuccessResponse(response, "A 6 digit OTP generated successfully, the otp is valid for 10 minutes only."));
+        return ResponseEntity.status(HttpStatus.CREATED).body(utility.getSuccessResponse(response, "A 6 digit OTP was sent to your email, it is valid for " + OtpService.VALIDITY_MINUTES + " minutes only."));
     }
 
     @PostMapping("/otp")
@@ -60,7 +60,7 @@ public class AuthController {
     ){
         log.info("{} Processing request to regenerate OTP.",mailId);
         otpService.generateOtp(mailId);
-        return ResponseEntity.ok(utility.getSuccessResponse(null, "OTP resent successfully."));
+        return ResponseEntity.ok(utility.getSuccessResponse(null, "A new OTP was sent, it is valid for " + OtpService.VALIDITY_MINUTES + " minutes only."));
     }
 
     //generates an OTP to reset password
@@ -69,7 +69,7 @@ public class AuthController {
             @RequestParam String id
     ){
         authService.resetPassword(id);
-        return ResponseEntity.ok(utility.getSuccessResponse(null, "A 6 digit OTP generated successfully to reset password, the otp is valid for 10 minutes only."));
+        return ResponseEntity.ok(utility.getSuccessResponse(null, "A 6 digit OTP was sent to reset your password, it is valid for " + OtpService.VALIDITY_MINUTES + " minutes only."));
     }
 
     //submit the generated otp and new password
