@@ -8,7 +8,13 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import org.springframework.http.MediaType;
+import org.springframework.web.client.RestClient;
+
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -33,6 +39,15 @@ public class MailService {
 
     @Value("${mail.reply-to:}")
     private String replyTo;
+
+    /**
+     * Brevo API key. When set, mails go out over HTTPS through Brevo's API instead of SMTP.
+     * Needed on hosts that block outgoing SMTP ports, such as Render's free plan.
+     */
+    @Value("${mail.brevo.api-key:}")
+    private String brevoApiKey;
+
+    private final RestClient brevo = RestClient.create("https://api.brevo.com/v3");
 
     public void sendOtpMail(String email, String otp) {
         if (email == null || otp == null) {
@@ -368,6 +383,11 @@ public class MailService {
         RuntimeException last = null;
         for (int attempt = 1; attempt <= SEND_ATTEMPTS; attempt++) {
             try {
+                if (brevoApiKey != null && !brevoApiKey.isBlank()) {
+                    sendViaBrevo(to, subject, html, archiveCopy);
+                    log.info("Mail sent successfully via Brevo to: {}", maskEmail(to));
+                    return;
+                }
                 MimeMessage mimeMessage = mailSender.createMimeMessage();
                 MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
                 helper.setTo(to);
@@ -396,6 +416,30 @@ public class MailService {
             }
         }
         throw last;
+    }
+
+    /** Sends one mail through Brevo's transactional email API (https://developers.brevo.com/reference/sendtransacemail). */
+    private void sendViaBrevo(String to, String subject, String html, boolean archiveCopy) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("sender", Map.of("name", fromName, "email", from));
+        body.put("to", List.of(Map.of("email", to)));
+        if (replyTo != null && !replyTo.isBlank()) body.put("replyTo", Map.of("email", replyTo));
+        if (archiveCopy && bcc != null && !bcc.isBlank() && !bcc.equalsIgnoreCase(to)) {
+            body.put("bcc", List.of(Map.of("email", bcc)));
+        }
+        body.put("subject", subject);
+        body.put("htmlContent", html);
+        body.put("textContent", toPlainText(html));
+        body.put("headers", Map.of("X-Entity-Ref-ID", UUID.randomUUID().toString()));
+
+        brevo.post()
+                .uri("/smtp/email")
+                .header("api-key", brevoApiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
     }
 
     /** Readable plain-text version of an HTML mail body. */
